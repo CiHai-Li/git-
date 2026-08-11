@@ -9,9 +9,11 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "collector:serve": "node collector/server.mjs",
+    "collector:run": "node collector/cli.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test": "node --test tests/*.test.mjs && tsc -b && vite build",
-    "lint": "eslint src tests"
+    "lint": "eslint src tests collector"
   },
   "dependencies": {
     "react": "19.2.6",

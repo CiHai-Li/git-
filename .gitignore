@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,12 +11,12 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
 
 # next.js
-/.next/
-/.vinext/
-/out/
+.next/
+.vinext/
+out/
 
 # misc
 .DS_Store
@@ -34,8 +34,8 @@ yarn-error.log*
 # vercel
 .vercel
 
-/dist/
+dist/
 *.tsbuildinfo
-/.wrangler/
-/outputs/
-/work/
+.wrangler/
+outputs/
+work/

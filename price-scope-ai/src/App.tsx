@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { demoProducts, weeklyTrend, type Product } from "./data/demo";
 import { analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
 
-type Page = "overview" | "diagnosis" | "simulator" | "reports" | "data" | "guide";
+type Page = "overview" | "collector" | "diagnosis" | "simulator" | "reports" | "data" | "guide";
 type AnalyzedProduct = Product & {
   marketMedian: number; weightedPrice: number; priceIndex: number; marginRate: number;
   profitFloor: number; suggestedLow: number; suggestedHigh: number; status: string;
@@ -11,6 +11,7 @@ type AnalyzedProduct = Product & {
 
 const navItems: { id: Page; label: string; mark: string }[] = [
   { id: "overview", label: "经营驾驶舱", mark: "⌂" },
+  { id: "collector", label: "价格采集中心", mark: "◉" },
   { id: "diagnosis", label: "价格诊断", mark: "◎" },
   { id: "simulator", label: "调价模拟器", mark: "↗" },
   { id: "reports", label: "报告中心", mark: "▤" },
@@ -235,6 +236,64 @@ function Reports({ products }: { products: AnalyzedProduct[] }) {
   </section>;
 }
 
+type CollectionResult = {
+  id: string; platform: string; sku: string; title: string; price?: number;
+  method?: string; status: "success" | "failed"; collectedAt: string; error?: string;
+};
+
+const demoCollection: CollectionResult[] = [
+  { id: "COL-001", platform: "京东", sku: "P001", title: "金领冠 珍护 2段 750g", price: 289, method: "开放接口快照", status: "success", collectedAt: "2026-08-11T13:42:00.000Z" },
+  { id: "COL-002", platform: "天猫", sku: "P001", title: "金领冠 珍护 2段 750g", price: 285, method: "开放接口快照", status: "success", collectedAt: "2026-08-11T13:41:00.000Z" },
+  { id: "COL-003", platform: "拼多多", sku: "P001", title: "金领冠 珍护 2段 750g", price: 279, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:40:00.000Z" },
+  { id: "COL-004", platform: "苏宁易购", sku: "P003", title: "飞鹤 星飞帆 3段 700g", price: 249, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:39:00.000Z" },
+];
+
+function CollectorCenter() {
+  const [mode, setMode] = useState<"demo" | "live">("demo");
+  const [urls, setUrls] = useState("");
+  const [results, setResults] = useState<CollectionResult[]>(demoCollection);
+  const [running, setRunning] = useState(false);
+  const [message, setMessage] = useState("当前显示稳定的面试演示快照，不代表实时平台价格。");
+  const runCollection = async () => {
+    if (mode === "demo") {
+      setRunning(true);
+      window.setTimeout(() => {
+        setResults(demoCollection.map((item) => ({ ...item, collectedAt: new Date().toISOString() })));
+        setMessage("演示快照已刷新。切换到“本地采集服务”可采集已授权的公开商品页。");
+        setRunning(false);
+      }, 700);
+      return;
+    }
+    const targets = urls.split(/\r?\n/).map((url) => url.trim()).filter(Boolean).map((url, index) => ({ id: `WEB-${index + 1}`, url }));
+    if (!targets.length) { setMessage("请先粘贴至少一个商品页 HTTPS 链接，每行一个。"); return; }
+    setRunning(true); setMessage("正在连接本地采集服务并按顺序限速采集……");
+    try {
+      const response = await fetch("http://127.0.0.1:8787/api/collect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targets }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "采集服务返回异常");
+      setResults(payload.results);
+      setMessage(`采集完成：成功 ${payload.summary.success}/${payload.summary.total}。失败项可改用平台开放 API 或 CSV。`);
+    } catch (error) {
+      setMessage(`未连接到本地采集服务：${error instanceof Error ? error.message : "未知错误"}。请先运行 pnpm collector:serve。`);
+    } finally { setRunning(false); }
+  };
+  const successful = results.filter((item) => item.status === "success");
+  const platforms = new Set(successful.map((item) => item.platform)).size;
+  return <section className="page-section collector-page">
+    <div className="page-title"><div><span className="eyebrow">市场情报入口</span><h1>价格采集中心</h1><p>从国内主流电商平台获取公开商品价格，形成可追溯的竞品报价快照。</p></div><button className="primary-button" onClick={runCollection} disabled={running}>{running ? "采集中…" : mode === "demo" ? "刷新演示快照" : "立即采集"}</button></div>
+    <div className="collector-kpis"><div><span>成功报价</span><b>{successful.length}</b><small>条</small></div><div><span>覆盖平台</span><b>{platforms}</b><small>个</small></div><div><span>成功率</span><b>{results.length ? Math.round(successful.length / results.length * 100) : 0}</b><small>%</small></div><div><span>采集策略</span><b className="strategy-value">限速</b><small>≥ 1.2 秒/页</small></div></div>
+    <div className="collector-layout"><article className="panel collector-control"><div className="panel-head"><div><h2>采集任务</h2><p>演示与真实采集明确隔离</p></div><span className={`mode-pill ${mode}`}>{mode === "demo" ? "DEMO" : "LOCAL"}</span></div>
+      <div className="mode-switch"><button className={mode === "demo" ? "active" : ""} onClick={() => { setMode("demo"); setMessage("当前显示稳定的面试演示快照，不代表实时平台价格。"); }}>演示快照</button><button className={mode === "live" ? "active" : ""} onClick={() => { setMode("live"); setMessage("本地服务仅接受京东、天猫、淘宝、拼多多、苏宁和唯品会 HTTPS 链接。"); }}>本地采集服务</button></div>
+      {mode === "demo" ? <div className="demo-board"><span>面试展示模式</span><h3>无需平台密钥，也能演示完整数据链路</h3><p>刷新后会生成新的采集时间，再进入价格诊断、调价模拟与报告输出。</p></div> : <label className="url-input"><span>公开商品页链接</span><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={"https://item.jd.com/商品编号.html\nhttps://detail.tmall.com/item.htm?id=商品编号"} /><small>每行一个。请仅采集你有权访问的公开页面，不绕过登录、验证码或访问限制。</small></label>}
+      <div className="collector-message">{message}</div>
+    </article><article className="panel platform-panel"><div className="panel-head"><div><h2>平台接入矩阵</h2><p>生产环境优先使用开放平台 API</p></div></div>{[
+        ["京东", "开放 API / 公开页", "已适配"], ["天猫 / 淘宝", "开放 API / 公开页", "已适配"], ["拼多多", "开放 API / 公开页", "已适配"], ["苏宁易购", "公开页", "已适配"], ["唯品会", "公开页", "已适配"],
+      ].map((item) => <div className="platform-row" key={item[0]}><span>{item[0].slice(0, 1)}</span><div><b>{item[0]}</b><small>{item[1]}</small></div><em>● {item[2]}</em></div>)}</article></div>
+    <article className="table-card collection-table"><div className="table-caption"><div><h2>最近采集结果</h2><p>价格、解析方式和采集时间均保留来源线索</p></div><span>{results.length} 条记录</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>匹配商品</th><th>到手价</th><th>解析方式</th><th>采集时间</th><th>状态</th></tr></thead><tbody>{results.map((item) => <tr key={item.id}><td><b>{item.platform}</b></td><td><b>{item.title}</b><small className="cell-sub">SKU：{item.sku}</small></td><td>{item.price ? <b className="suggested">¥{item.price}</b> : "—"}</td><td>{item.method || "—"}</td><td>{new Date(item.collectedAt).toLocaleString("zh-CN", { hour12: false })}</td><td><span className={`collection-status ${item.status}`}>{item.status === "success" ? "采集成功" : "采集失败"}</span>{item.error && <small className="cell-sub error-copy">{item.error}</small>}</td></tr>)}</tbody></table></div></article>
+    <div className="compliance-note"><b>合规边界</b><span>系统不会绕过登录、验证码、robots.txt 或平台访问控制。正式商业部署应申请对应平台开放 API 权限，并保留请求频率、授权范围和数据用途审计。</span></div>
+  </section>;
+}
+
 function DataCenter({ products, onImport, onReset }: { products: AnalyzedProduct[]; onImport: (rows: Record<string,string>[]) => void; onReset: () => void }) {
   const [message, setMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -256,7 +315,12 @@ function Guide({ onNavigate }: { onNavigate: (page: Page) => void }) {
     ["05","导出报告","下载调价清单，或打印管理层可视化报告。"],
     ["06","小范围实验","执行7天实验，记录效果后再扩大调价范围。"],
   ];
-  return <section className="page-section"><div className="page-title"><div><span className="eyebrow">快速上手</span><h1>使用指引</h1><p>从数据导入到调价复盘，建议按照以下流程操作。</p></div></div><div className="guide-grid">{steps.map((step) => <article key={step[0]}><span>{step[0]}</span><div><h2>{step[1]}</h2><p>{step[2]}</p></div></article>)}</div><div className="guide-callout"><div><span>✦</span><div><h2>先用演示数据体验完整流程</h2><p>系统已经内置12个母婴奶粉商品，可以直接查看价格诊断、运行模拟并生成报告。</p></div></div><button className="primary-button" onClick={() => onNavigate("overview")}>进入驾驶舱</button></div><article className="panel glossary"><h2>关键指标解释</h2><div><p><b>价格指数</b><span>本店到手价 ÷ 市场中位价 × 100，100表示与市场一致。</span></p><p><b>利润底价</b><span>在满足最低毛利率条件下允许设置的最低价格。</span></p><p><b>匹配可信度</b><span>根据品牌、系列、段位、规格和报价数量评估。</span></p><p><b>增量机会</b><span>偏高商品调至建议价格后可能获得的销售额增长估算。</span></p></div></article></section>;
+  return <section className="page-section"><div className="page-title"><div><span className="eyebrow">快速上手</span><h1>使用指引</h1><p>从数据导入到调价复盘，建议按照以下流程操作。</p></div></div><div className="guide-grid">{steps.map((step) => <article key={step[0]}><span>{step[0]}</span><div><h2>{step[1]}</h2><p>{step[2]}</p></div></article>)}</div><div className="guide-callout"><div><span>✦</span><div><h2>先用演示数据体验完整流程</h2><p>系统已经内置12个母婴奶粉商品，可以直接查看价格诊断、运行模拟并生成报告。</p></div></div><button className="primary-button" onClick={() => onNavigate("overview")}>进入驾驶舱</button></div><article className="panel glossary"><h2>关键指标解释</h2><div><p><b>价格指数</b><span>本店到手价 ÷ 市场中位价 × 100，100表示与市场一致。</span></p><p><b>利润底价</b><span>在满足最低毛利率条件下允许设置的最低价格。</span></p><p><b>匹配可信度</b><span>根据品牌、系列、段位、规格和报价数量评估。</span></p><p><b>增量机会</b><span>偏高商品调至建议价格后可能获得的销售额增长估算。</span></p></div></article><article className="panel strategy-guide"><div className="panel-head"><div><h2>商品角色与定价策略</h2><p>同一个价格偏差，在不同商品角色下应采取不同动作</p></div></div><div className="strategy-grid">{[
+    ["引流型", "获取访问与新客", "靠近市场低位，但不突破利润底价", "关注访客成本、连带率"],
+    ["转化型", "提升下单效率", "保持市场中位价附近，优先做7天实验", "关注转化率、销量弹性"],
+    ["利润型", "贡献毛利", "允许适度溢价，以价值表达替代直接降价", "关注毛利额、折扣深度"],
+    ["形象型", "强化品牌定位", "跟随头部标杆，避免频繁价格波动", "关注价格稳定性、品牌搜索"],
+  ].map((item) => <div key={item[0]}><span>{item[0]}</span><h3>{item[1]}</h3><p>{item[2]}</p><small>{item[3]}</small></div>)}</div><div className="strategy-rule"><b>决策顺序</b><span>先确认同款匹配可信度 → 再看市场价格带 → 校验利润底价 → 结合商品角色 → 小流量实验 → 复盘后扩大。</span></div></article></section>;
 }
 
 function App() {
@@ -282,6 +346,7 @@ function App() {
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span>价</span><div><b>价策 AI</b><small>PRICE SCOPE</small></div></div><nav>{navItems.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><span>{item.mark}</span>{item.label}{item.id === "diagnosis" && <em>{analyzed.filter((product) => product.status.includes("偏高")).length}</em>}</button>)}</nav><div className="sidebar-card"><span>AI</span><b>本周策略已更新</b><p>{analyzed.filter((product) => product.status.includes("偏高")).length} 个商品建议优先处理</p><button onClick={() => navigate("diagnosis")}>查看建议</button></div><div className="sidebar-user"><span>示</span><div><b>示例商家</b><small>管理员</small></div><button aria-label="更多账户选项">•••</button></div></aside>
     <main><header className="topbar"><div className="mobile-brand"><b>价策 AI</b></div><div className="store-switch"><span>示例商家 · 全国渠道</span><b>⌄</b></div><div className="top-actions"><span className="data-time">数据更新于 10 分钟前</span><button aria-label="消息通知">◌<i /></button><button className="avatar" aria-label="账户">示</button></div></header><div className="content">
       {page === "overview" && <Overview products={analyzed} onNavigate={navigate} />}
+      {page === "collector" && <CollectorCenter />}
       {page === "diagnosis" && <Diagnosis products={analyzed} onSelect={setSelected} />}
       {page === "simulator" && <Simulator products={analyzed} initialId={simulatorId} />}
       {page === "reports" && <Reports products={analyzed} />}

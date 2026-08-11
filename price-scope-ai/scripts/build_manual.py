@@ -245,7 +245,7 @@ def build():
     set_run_font(description.add_run("面向电商运营、品类负责人、店铺负责人、采购与定价人员"), size=10, color=MUTED)
     version = doc.add_paragraph()
     version.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(version.add_run("版本 1.0  |  MVP 使用指南"), size=11, color=NAVY, bold=True)
+    set_run_font(version.add_run("版本 1.1  |  采集增强版"), size=11, color=NAVY, bold=True)
     date = doc.add_paragraph()
     date.alignment = WD_ALIGN_PARAGRAPH.CENTER
     set_run_font(date.add_run("2026 年 8 月"), size=9.5, color=MUTED)
@@ -253,30 +253,30 @@ def build():
     new_content_page(doc)
     add_heading(doc, "目录与快速导航", 1)
     for index, item in enumerate((
-        "产品简介与快速开始", "主界面与经营驾驶舱", "数据导入", "价格诊断",
-        "调价模拟器", "报告中心", "建议操作流程", "商品角色",
-        "数据安全与常见问题", "后续商用升级",
+        "产品简介与快速开始", "主界面与经营驾驶舱", "价格采集中心", "数据导入",
+        "价格诊断", "定价策略体系", "调价模拟器", "报告中心",
+        "建议操作流程", "数据安全与常见问题", "后续商用升级",
     ), 1):
         paragraph = doc.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(7)
         set_run_font(paragraph.add_run(f"{index:02d}"), size=10, color=BLUE, bold=True)
         set_run_font(paragraph.add_run(f"    {item}"), size=11, color=NAVY)
     add_heading(doc, "1. 产品简介", 1)
-    add_body(doc, "价策 AI 是面向电商商家的定价决策与经营分析产品。系统结合商品价格、成本、销量、库存与竞品报价，对商品进行价格健康度诊断，给出可解释的建议价格区间，并支持调价模拟和可视化报告输出。")
-    add_body(doc, "MVP 使用演示数据或用户导入的 CSV 文件运行，数据仅保存在当前浏览器中，不会上传至服务器，也不会自动修改电商平台上的商品价格。")
+    add_body(doc, "价策 AI 是面向电商商家的价格情报与定价决策产品。系统从平台开放 API、合规公开商品页或 CSV 获得竞品报价，结合商品价格、成本、销量、库存与商品角色，完成价格诊断、建议区间、调价模拟和可视化报告。")
+    add_body(doc, "当前版本不会自动修改平台售价。演示业务数据保存在浏览器；本地采集服务只监听本机地址，不绕过登录、验证码、robots.txt 或访问控制。")
     add_heading(doc, "2. 快速开始", 1)
     add_steps(doc, [
         "安装 Node.js 22.13 或更高版本。",
-        "在项目目录依次执行 corepack enable、pnpm install 和 pnpm dev。",
+        "进入 price-scope-ai 目录，依次执行 pnpm install 和 pnpm dev。",
         "打开终端显示的本地地址，默认通常为 http://127.0.0.1:4173。",
         "首次进入时，系统自动加载 12 个母婴奶粉演示商品。",
-        "直接体验驾驶舱、价格诊断、调价模拟和报告中心。",
+        "如需采集公开页，另开终端执行 pnpm collector:serve。",
     ])
 
     new_content_page(doc)
     add_heading(doc, "3. 主界面与经营驾驶舱", 1)
     add_figure(doc, "dashboard.png", "图 1  经营驾驶舱：全店价格健康度和优先调价机会")
-    add_body(doc, "左侧导航包含经营驾驶舱、价格诊断、调价模拟器、报告中心、数据中心和使用指引六个模块。")
+    add_body(doc, "左侧导航包含经营驾驶舱、价格采集中心、价格诊断、调价模拟器、报告中心、数据中心和使用指引七个模块。")
     add_bullets(doc, [
         "近 30 天销售额、预计增量机会、综合毛利额与竞品覆盖率。",
         "价格竞争力矩阵、价格健康度分布与优先调价商品。",
@@ -285,9 +285,28 @@ def build():
     add_body(doc, "价格竞争力矩阵中，横轴表示价格指数，纵轴表示近 30 天销量，气泡大小代表毛利空间。商品越靠右，说明本店价格相对市场越高。")
 
     new_content_page(doc)
-    add_heading(doc, "4. 数据导入", 1)
+    add_heading(doc, "4. 价格采集中心", 1)
+    add_body(doc, "采集中心将面试演示与真实采集明确隔离。演示快照无需平台密钥且标识为 DEMO；本地采集服务接收用户提供的公开商品页 HTTPS 链接，输出平台、价格、解析方式、采集时间和失败原因。")
+    add_heading(doc, "4.1 本地采集步骤", 2)
+    add_steps(doc, [
+        "在项目目录运行 pnpm collector:serve。",
+        "进入价格采集中心，切换为“本地采集服务”。",
+        "粘贴公开商品页链接，每行一个，然后点击“立即采集”。",
+        "核对采集状态、解析方式和匹配商品；失败项改用开放 API 或 CSV。",
+    ])
+    add_heading(doc, "4.2 支持范围与边界", 2)
+    add_bullets(doc, [
+        "支持京东、天猫、淘宝、拼多多、苏宁易购和唯品会 HTTPS 域名白名单。",
+        "最小请求间隔 1.2 秒，检查 robots.txt，限制单次任务和页面大小。",
+        "依次解析 JSON-LD、价格 Meta 和页面公开数据。",
+        "不绕过登录、验证码或访问控制；商业部署优先使用平台开放 API。",
+        "密钥、Cookie 和账号信息不得提交到 GitHub 或下发浏览器。",
+    ])
+
+    new_content_page(doc)
+    add_heading(doc, "5. 数据导入", 1)
     add_body(doc, "进入“数据中心”，点击“下载导入模板”获取标准 CSV 模板。填写后点击“选择 CSV 文件”完成导入。")
-    add_heading(doc, "4.1 必填字段", 2)
+    add_heading(doc, "5.1 必填字段", 2)
     add_table(doc, ["字段", "用途", "示例"], [
         ("商品编码", "SKU 唯一标识", "P001"), ("品牌", "商品标准化", "伊利"),
         ("系列", "同系列匹配", "金领冠珍护"), ("段位", "母婴商品分组", "2段"),
@@ -295,7 +314,7 @@ def build():
         ("成本", "计算利润安全线", "209"), ("近30天销量", "策略模拟", "156"),
         ("商品角色", "差异化定价", "转化型"), ("平台价格", "市场价格样本", "261/257/251"),
     ], [1900, 4600, 2860])
-    add_heading(doc, "4.2 导入要求", 2)
+    add_heading(doc, "5.2 导入要求", 2)
     add_bullets(doc, [
         "文件格式必须为 CSV，推荐 UTF-8 编码。",
         "价格字段只填写数字，不包含“元”或货币符号。",
@@ -306,10 +325,10 @@ def build():
     ])
 
     new_content_page(doc)
-    add_heading(doc, "5. 价格诊断", 1)
+    add_heading(doc, "6. 价格诊断", 1)
     add_figure(doc, "diagnosis.png", "图 2  商品级价格诊断与建议价格区间")
     add_body(doc, "价格诊断表包含当前到手价、市场中位价、价格指数、毛利率、诊断状态、建议价格区间和匹配可信度。点击“详情”可查看竞品样本和 AI 解释。")
-    add_heading(doc, "5.1 诊断状态", 2)
+    add_heading(doc, "6.1 诊断状态", 2)
     add_table(doc, ["状态", "判定", "处理建议"], [
         ("偏高价格", "价格指数 > 106", "优先进入调价模拟"),
         ("轻度偏高", "102 < 价格指数 ≤ 106", "结合经营角色审核"),
@@ -317,7 +336,7 @@ def build():
         ("优势价格", "低于主流且利润安全", "加强活动曝光"),
         ("低价风险", "明显偏低或毛利不安全", "检查成本和活动"),
     ], [1900, 3100, 4360])
-    add_heading(doc, "5.2 关键公式", 2)
+    add_heading(doc, "6.2 关键公式", 2)
     add_bullets(doc, [
         "到手价 = 页面价格 + 运费 - 优惠券 - 满减 - 平台补贴。",
         "价格指数 = 本店到手价 ÷ 市场中位价 × 100。",
@@ -326,7 +345,28 @@ def build():
     ])
 
     new_content_page(doc)
-    add_heading(doc, "6. 调价模拟器", 1)
+    add_heading(doc, "7. 定价策略体系", 1)
+    add_body(doc, "定价不是简单跟随最低价。系统先统一到手价口径，再结合市场价格带、利润底价和商品经营角色，生成进攻、平衡与保守方案。")
+    add_heading(doc, "7.1 商品角色策略", 2)
+    add_table(doc, ["角色", "经营目标", "建议动作"], [
+        ("引流型", "获取访问与新客", "靠近市场低位，不击穿利润底价"),
+        ("转化型", "提升下单效率", "中位价附近，先做 7 天实验"),
+        ("利润型", "贡献毛利", "允许合理溢价，减少直接折扣"),
+        ("防御型", "对标重点竞品", "紧跟目标竞品有效到手价"),
+        ("形象型", "强化品牌定位", "跟随标杆，减少频繁波动"),
+        ("清仓型", "加快库存周转", "利润与渠道约束内积极降价"),
+    ], [1600, 3000, 4760])
+    add_heading(doc, "7.2 策略护栏", 2)
+    add_bullets(doc, [
+        "匹配可信度不足时先人工审核，不给自动执行动作。",
+        "建议价格不得低于利润底价。",
+        "进攻价取建议区间低位，平衡价取中点，保守价取高位。",
+        "促销价与日常价分开观察，组合装先换算单位价格。",
+        "单次大幅调价拆成小流量实验，设置销量和毛利双重停止条件。",
+    ])
+
+    new_content_page(doc)
+    add_heading(doc, "8. 调价模拟器", 1)
     add_figure(doc, "simulator.png", "图 3  调价前的销量、销售额与毛利模拟")
     add_steps(doc, [
         "选择需要模拟的商品。",
@@ -338,7 +378,7 @@ def build():
     add_body(doc, "当前版本使用固定价格弹性系数进行演示，模拟结果只用于辅助决策，不应代替实际业务实验。")
 
     new_content_page(doc)
-    add_heading(doc, "7. 报告中心", 1)
+    add_heading(doc, "9. 报告中心", 1)
     add_figure(doc, "reports.png", "图 4  面向管理层的价格竞争力诊断周报")
     add_bullets(doc, [
         "导出调价清单：下载 CSV，供运营人员批量审核和执行。",
@@ -347,9 +387,10 @@ def build():
     add_body(doc, "管理层报告包含综合健康度、诊断商品数、重点优化商品、增量机会、数据覆盖率、经营结论和优先调价表。")
 
     new_content_page(doc)
-    add_heading(doc, "8. 建议操作流程", 1)
+    add_heading(doc, "10. 建议操作流程", 1)
     add_steps(doc, [
-        "每周固定时间更新商家商品和竞品报价。",
+        "定期运行授权 API、公开页采集或 CSV 导入。",
+        "检查采集成功率、采集时间和同款匹配可信度。",
         "优先处理偏高价格和低价风险商品。",
         "检查商品匹配和竞品样本是否合理。",
         "在模拟器中比较进攻、平衡与保守方案。",
@@ -358,27 +399,20 @@ def build():
         "复盘销量、转化率、销售额和毛利变化。",
         "验证有效后再扩大执行范围。",
     ])
-    add_heading(doc, "9. 商品角色说明", 1)
-    add_table(doc, ["角色", "经营目标", "定价倾向"], [
-        ("引流型", "获取搜索流量和新客", "接近市场优势区间"),
-        ("转化型", "承接明确购买需求", "兼顾竞争力与利润"),
-        ("利润型", "贡献毛利", "允许高于市场中位价"),
-        ("防御型", "对标重点竞品", "保持与主要竞品接近"),
-        ("形象型", "维护品牌价格心智", "避免频繁大幅降价"),
-        ("清仓型", "加快库存周转", "利润底线内积极降价"),
-    ], [1600, 3500, 4260])
-
     new_content_page(doc)
-    add_heading(doc, "10. 数据安全与版本边界", 1)
+    add_heading(doc, "11. 数据安全与版本边界", 1)
     add_bullets(doc, [
         "当前数据保存在浏览器 localStorage 中，清除浏览器数据可能导致导入内容丢失。",
-        "系统不连接商家账号，也不会自动执行调价。",
+        "本地采集服务只监听 127.0.0.1，不对公网开放。",
+        "系统不保存平台密钥、Cookie 或个人账号，也不会自动执行调价。",
+        "不采集登录后、验证码保护或 robots.txt 禁止的页面。",
         "演示竞品价格不代表真实市场报价。",
         "真实商用前，应接入合规的数据接口、账号权限、审批记录和服务端数据库。",
         "AI 文字说明来自结构化计算结果，最终定价仍需要业务人员审核。",
     ])
-    add_heading(doc, "11. 常见问题", 1)
+    add_heading(doc, "12. 常见问题", 1)
     for question, answer in (
+        ("公开页采集失败", "平台可能采用动态渲染、登录校验或 robots 限制；系统不会绕过控制，请改用官方开放 API 或 CSV。"),
         ("导入后没有商品", "检查 CSV 是否包含“当前价格”字段，并确认价格为大于 0 的数字。"),
         ("商品全部显示偏高", "检查竞品价格是否为到手价、规格是否一致，以及是否混合单件价和组合装总价。"),
         ("建议价格高于市场价格", "通常是利润底价或商品角色限制导致，应检查成本、最低毛利率和商品角色。"),
@@ -386,9 +420,10 @@ def build():
         ("如何恢复演示数据", "进入数据中心，点击“恢复演示数据”。"),
     ):
         add_body(doc, f"{question}：{answer}", bold_lead=f"{question}：")
-    add_heading(doc, "12. 后续商用升级建议", 1)
+    add_heading(doc, "13. 后续商用升级建议", 1)
     add_bullets(doc, [
-        "接入真实平台授权 API 和历史报价。",
+        "接入真实平台授权 API、授权续期和调用监控。",
+        "增加定时任务、历史报价数据库与异常告警。",
         "增加多商家账号、权限与数据隔离。",
         "增加商品匹配人工审核工作台。",
         "保存调价审批、执行与实验记录。",
@@ -399,7 +434,7 @@ def build():
 
     core = doc.core_properties
     core.title = "价策 AI 产品使用说明书"
-    core.subject = "智能定价决策平台 MVP 操作指南"
+    core.subject = "价格采集与智能定价决策平台操作指南"
     core.author = "价策 AI 产品团队"
     core.keywords = "电商, 定价, 比价, AI, 产品说明书"
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
