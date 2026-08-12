@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyzeProduct, median, parseCsv, simulatePrice, summarizePortfolio, weightedMean } from "../src/lib/pricing.mjs";
+import { analyzePriceInflections, analyzeProduct, median, parseCsv, simulatePrice, summarizePortfolio, weightedMean } from "../src/lib/pricing.mjs";
 
 const product = {
   id: "T001", brand: "测试", series: "标准", stage: "2段", spec: "800g", name: "测试商品",
@@ -49,4 +49,26 @@ test("portfolio summary reports actionable counts", () => {
 test("CSV parser supports quoted commas and BOM", () => {
   const rows = parseCsv('\uFEFF商品编码,商品名称,当前价格\nP1,"奶粉, 2段",269');
   assert.deepEqual(rows, [{ 商品编码: "P1", 商品名称: "奶粉, 2段", 当前价格: "269" }]);
+});
+
+test("price inflection analysis detects valleys and peaks", () => {
+  const result = analyzePriceInflections([
+    { date: "8/1", price: 300, marketPrice: 290, sales: 20 },
+    { date: "8/2", price: 280, marketPrice: 286, sales: 24 },
+    { date: "8/3", price: 286, marketPrice: 285, sales: 30 },
+    { date: "8/4", price: 302, marketPrice: 288, sales: 23 },
+    { date: "8/5", price: 290, marketPrice: 289, sales: 21 },
+  ]);
+  assert.equal(result.inflections.length, 2);
+  assert.equal(result.inflections[0].type, "valley");
+  assert.equal(result.inflections[1].type, "peak");
+  assert.equal(result.latestTrend, "down");
+  assert.ok(result.inflections.every((point) => point.confidence >= 68));
+});
+
+test("price inflection analysis filters small daily noise", () => {
+  const result = analyzePriceInflections([
+    { date: "1", price: 100 }, { date: "2", price: 99.5 }, { date: "3", price: 100.2 },
+  ]);
+  assert.equal(result.inflections.length, 0);
 });

@@ -149,3 +149,74 @@ export function parseCsv(text) {
     return Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]));
   });
 }
+
+/**
+ * Detect meaningful turning points in a chronological price series.
+ * A point is retained only when the slopes on its two sides reverse and the
+ * price movement is large enough, which filters out ordinary daily noise.
+ */
+export function analyzePriceInflections(points, options = {}) {
+  const minChangeRate = Number(options.minChangeRate ?? 0.018);
+  const clean = (points || [])
+    .map((point, index) => ({
+      ...point,
+      index,
+      price: Number(point.price),
+      marketPrice: Number(point.marketPrice),
+      sales: Number(point.sales),
+    }))
+    .filter((point) => Number.isFinite(point.price) && point.price > 0);
+
+  const inflections = [];
+  for (let index = 1; index < clean.length - 1; index += 1) {
+    const previous = clean[index - 1];
+    const current = clean[index];
+    const next = clean[index + 1];
+    const beforeSlope = (current.price - previous.price) / previous.price;
+    const afterSlope = (next.price - current.price) / current.price;
+    const reversed = beforeSlope * afterSlope < 0;
+    const magnitude = Math.max(Math.abs(beforeSlope), Math.abs(afterSlope));
+    if (!reversed || magnitude < minChangeRate) continue;
+
+    const type = beforeSlope < 0 && afterSlope > 0 ? "valley" : "peak";
+    const salesSignal = Number.isFinite(previous.sales) && Number.isFinite(next.sales) && previous.sales > 0
+      ? (next.sales - previous.sales) / previous.sales
+      : 0;
+    const marketGap = Number.isFinite(current.marketPrice) && current.marketPrice > 0
+      ? (current.price - current.marketPrice) / current.marketPrice
+      : 0;
+    const confidence = Math.min(98, Math.round(68 + magnitude * 260 + Math.min(Math.abs(salesSignal) * 80, 12)));
+    const label = type === "valley" ? "降价止跌拐点" : "涨价转弱拐点";
+    const recommendation = type === "valley"
+      ? (salesSignal > 0.05 ? "销量已响应，建议维持当前价格并观察 3—7 天。" : "销量响应不足，建议检查流量、内容与同款匹配后再决定是否继续降价。")
+      : (marketGap > 0.03 ? "本店价格高于市场，建议进入调价模拟并设置毛利停止线。" : "市场同步上涨，建议暂缓降价并关注竞品回落。 ");
+
+    inflections.push({
+      index,
+      date: current.date ?? String(index + 1),
+      price: current.price,
+      type,
+      label,
+      magnitude: round(magnitude * 100),
+      salesChange: round(salesSignal * 100),
+      marketGap: round(marketGap * 100),
+      confidence,
+      recommendation: recommendation.trim(),
+    });
+  }
+
+  const latest = clean.at(-1);
+  const previous = clean.at(-2);
+  const latestTrend = latest && previous
+    ? latest.price > previous.price ? "up" : latest.price < previous.price ? "down" : "flat"
+    : "flat";
+  return {
+    points: clean,
+    inflections,
+    latestTrend,
+    latestPrice: latest?.price ?? 0,
+    latestMarketGap: latest && Number.isFinite(latest.marketPrice) && latest.marketPrice > 0
+      ? round(((latest.price - latest.marketPrice) / latest.marketPrice) * 100)
+      : 0,
+  };
+}

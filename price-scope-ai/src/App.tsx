@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoProducts, weeklyTrend, type Product } from "./data/demo";
-import { analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
+import { analyzePriceInflections, analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
 
-type Page = "overview" | "collector" | "diagnosis" | "simulator" | "reports" | "data" | "guide";
+type Page = "overview" | "collector" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
 type AnalyzedProduct = Product & {
   marketMedian: number; weightedPrice: number; priceIndex: number; marginRate: number;
   profitFloor: number; suggestedLow: number; suggestedHigh: number; status: string;
@@ -13,6 +13,7 @@ const navItems: { id: Page; label: string; mark: string }[] = [
   { id: "overview", label: "经营驾驶舱", mark: "⌂" },
   { id: "collector", label: "价格采集中心", mark: "◉" },
   { id: "diagnosis", label: "价格诊断", mark: "◎" },
+  { id: "inflection", label: "价格拐点分析", mark: "⌁" },
   { id: "simulator", label: "调价模拟器", mark: "↗" },
   { id: "reports", label: "报告中心", mark: "▤" },
   { id: "data", label: "数据中心", mark: "⇅" },
@@ -221,6 +222,65 @@ function Simulator({ products, initialId }: { products: AnalyzedProduct[]; initi
     </article></div></section>;
 }
 
+type HistoryPoint = { date: string; price: number; marketPrice: number; sales: number };
+const inflectionHistories: Record<string, HistoryPoint[]> = Object.fromEntries(demoProducts.map((product, productIndex) => {
+  const market = Math.round(product.offers.reduce((sum, offer) => sum + offer.price, 0) / product.offers.length);
+  const pattern = productIndex % 3 === 0
+    ? [1.08, 1.05, .96, .94, .98, 1.01, 1.0, .97, .99, 1.02]
+    : productIndex % 3 === 1
+      ? [1.02, 1.01, 1, 1.04, 1.08, 1.03, .99, .98, 1, 1.01]
+      : [1.01, 1, .99, 1, 1.01, 1, .99, 1, 1.005, 1];
+  return [product.id, pattern.map((ratio, index) => ({
+    date: `8/${index + 2}`,
+    price: Math.round(product.currentPrice * ratio),
+    marketPrice: Math.round(market * (1 + Math.sin(index / 2) * .012)),
+    sales: Math.max(8, Math.round(product.sales30d / 10 * (2.05 - ratio) * (1 + index * .01))),
+  }))];
+}));
+
+function InflectionChart({ points, inflections }: { points: HistoryPoint[]; inflections: { index: number; type: string }[] }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas || !points.length) return;
+    const rect = canvas.getBoundingClientRect(); const ratio = window.devicePixelRatio || 1;
+    canvas.width = rect.width * ratio; canvas.height = rect.height * ratio;
+    const ctx = canvas.getContext("2d"); if (!ctx) return; ctx.scale(ratio, ratio);
+    const pad = { left: 43, right: 22, top: 28, bottom: 34 }; const width = rect.width; const height = rect.height;
+    const values = points.flatMap((point) => [point.price, point.marketPrice]);
+    const min = Math.min(...values) * .97; const max = Math.max(...values) * 1.03;
+    const x = (index: number) => pad.left + index / Math.max(points.length - 1, 1) * (width - pad.left - pad.right);
+    const y = (value: number) => height - pad.bottom - (value - min) / Math.max(max - min, 1) * (height - pad.top - pad.bottom);
+    ctx.font = "10px Arial"; ctx.strokeStyle = "#edf0f5"; ctx.fillStyle = "#929bad"; ctx.lineWidth = 1;
+    [0, .33, .66, 1].forEach((step) => { const py = pad.top + step * (height - pad.top - pad.bottom); ctx.beginPath(); ctx.moveTo(pad.left, py); ctx.lineTo(width-pad.right, py); ctx.stroke(); ctx.fillText(String(Math.round(max-(max-min)*step)), 5, py+3); });
+    [["marketPrice", "#9ca6b8"], ["price", "#5273df"]].forEach(([key, color]) => { ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = key === "price" ? 3 : 2; ctx.setLineDash(key === "price" ? [] : [5, 5]); points.forEach((point,index) => { const px=x(index); const py=y(point[key as "price" | "marketPrice"]); if (index) ctx.lineTo(px,py); else ctx.moveTo(px,py); }); ctx.stroke(); });
+    ctx.setLineDash([]); points.forEach((point,index) => { ctx.fillStyle="#8791a3"; ctx.fillText(point.date,x(index)-9,height-11); });
+    inflections.forEach((point) => { const px=x(point.index); const py=y(points[point.index].price); ctx.beginPath(); ctx.fillStyle=point.type === "valley" ? "#2fa675" : "#e46767"; ctx.arc(px,py,6,0,Math.PI*2); ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke(); });
+  }, [points, inflections]);
+  return <canvas ref={canvasRef} className="inflection-canvas" aria-label="价格拐点趋势图" />;
+}
+
+function InflectionAnalysis({ products, onSimulate }: { products: AnalyzedProduct[]; onSimulate: (id: string) => void }) {
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [threshold, setThreshold] = useState(1.8);
+  const product = products.find((item) => item.id === productId) || products[0];
+  const history = inflectionHistories[product?.id] || [];
+  const analysis = analyzePriceInflections(history, { minChangeRate: threshold / 100 });
+  const latest = analysis.inflections.at(-1);
+  const exportResult = () => {
+    const header = ["日期","类型","价格","变动幅度","销量变化","市场价差","可信度","策略建议"];
+    const rows = analysis.inflections.map((item: { date: string; label: string; price: number; magnitude: number; salesChange: number; marketGap: number; confidence: number; recommendation: string }) => [item.date,item.label,item.price,item.magnitude,item.salesChange,item.marketGap,item.confidence,item.recommendation]);
+    downloadText("价策AI-价格拐点分析.csv", `\uFEFF${[header,...rows].map(row=>row.join(",")).join("\n")}`);
+  };
+  return <section className="page-section inflection-page"><div className="page-title"><div><span className="eyebrow">趋势决策引擎</span><h1>价格拐点分析</h1><p>联合价格、市场基准与销量响应，识别值得行动的趋势反转。</p></div><div className="button-row"><button className="secondary-button" onClick={exportResult}>导出拐点报告</button><button className="primary-button" onClick={() => onSimulate(product.id)}>进入调价模拟</button></div></div>
+    <div className="inflection-toolbar"><label>分析商品<select value={productId} onChange={(event)=>setProductId(event.target.value)}>{products.map(item=><option key={item.id} value={item.id}>{item.brand} {item.series} {item.stage} {item.spec}</option>)}</select></label><label>敏感度<select value={threshold} onChange={(event)=>setThreshold(Number(event.target.value))}><option value={1}>高（1%）</option><option value={1.8}>标准（1.8%）</option><option value={3}>稳健（3%）</option></select></label><div><span>识别结果</span><b>{analysis.inflections.length} 个有效拐点</b></div></div>
+    <div className="inflection-kpis"><div><span>最新本店价</span><b>¥{analysis.latestPrice}</b><small>{analysis.latestTrend === "up" ? "短期上行" : analysis.latestTrend === "down" ? "短期下行" : "保持稳定"}</small></div><div><span>相对市场</span><b className={analysis.latestMarketGap > 3 ? "risk-copy" : "safe-copy"}>{percent(analysis.latestMarketGap)}</b><small>对比同款市场价</small></div><div><span>最近拐点</span><b>{latest?.label || "暂无显著拐点"}</b><small>{latest ? `${latest.date} · 可信度 ${latest.confidence}%` : "当前价格波动较平稳"}</small></div></div>
+    <div className="inflection-layout"><article className="panel inflection-chart-panel"><div className="panel-head"><div><h2>价格与市场趋势</h2><p>实线为本店价，虚线为市场价；红色为峰值，绿色为谷值</p></div><span className="model-pill">阈值 {threshold}%</span></div><InflectionChart points={history} inflections={analysis.inflections} /></article>
+      <article className="panel inflection-advice"><div className="panel-head"><div><h2>AI 决策建议</h2><p>最近有效信号</p></div></div>{latest ? <><span className={`turning-badge ${latest.type}`}>{latest.label}</span><h3>{latest.type === "valley" ? "观察销量是否持续回升" : "警惕价格上行后的转化走弱"}</h3><p>{latest.recommendation}</p><div className="signal-grid"><div><span>价格幅度</span><b>{latest.magnitude}%</b></div><div><span>销量变化</span><b>{percent(latest.salesChange)}</b></div><div><span>市场价差</span><b>{percent(latest.marketGap)}</b></div><div><span>可信度</span><b>{latest.confidence}%</b></div></div></> : <div className="empty-signal"><span>—</span><h3>价格处于稳定区间</h3><p>当前没有超过阈值的趋势反转，建议保持价格并持续采集。</p></div>}</article></div>
+    <article className="table-card inflection-table"><div className="table-caption"><div><h2>拐点事件清单</h2><p>按时间记录触发信号及建议动作</p></div><span>{analysis.inflections.length} 条事件</span></div><div className="table-scroll"><table><thead><tr><th>日期</th><th>拐点类型</th><th>当日价格</th><th>价格幅度</th><th>销量响应</th><th>市场价差</th><th>可信度</th><th>策略动作</th></tr></thead><tbody>{analysis.inflections.map((item: { index:number; date:string; label:string; type:string; price:number; magnitude:number; salesChange:number; marketGap:number; confidence:number; recommendation:string })=><tr key={`${item.date}-${item.type}`}><td>{item.date}</td><td><span className={`turning-badge ${item.type}`}>{item.label}</span></td><td><b>¥{item.price}</b></td><td>{item.magnitude}%</td><td className={item.salesChange >= 0 ? "safe-copy" : "risk-copy"}>{percent(item.salesChange)}</td><td>{percent(item.marketGap)}</td><td>{item.confidence}%</td><td>{item.recommendation}</td></tr>)}</tbody></table></div></article>
+    <div className="compliance-note"><b>分析口径</b><span>拐点是决策信号而非因果结论。系统仅在相邻价格斜率反转且变动超过阈值时标记，并结合销量响应和市场价差增强解释；执行前仍需排除大促、缺货、流量投放与竞品规格变化。</span></div>
+  </section>;
+}
+
 function Reports({ products }: { products: AnalyzedProduct[] }) {
   const summary = summarizePortfolio(products);
   const exportCsv = () => {
@@ -348,6 +408,7 @@ function App() {
       {page === "overview" && <Overview products={analyzed} onNavigate={navigate} />}
       {page === "collector" && <CollectorCenter />}
       {page === "diagnosis" && <Diagnosis products={analyzed} onSelect={setSelected} />}
+      {page === "inflection" && <InflectionAnalysis products={analyzed} onSimulate={(id) => { setSimulatorId(id); navigate("simulator"); }} />}
       {page === "simulator" && <Simulator products={analyzed} initialId={simulatorId} />}
       {page === "reports" && <Reports products={analyzed} />}
       {page === "data" && <DataCenter products={analyzed} onImport={importRows} onReset={() => setProducts(demoProducts)} />}

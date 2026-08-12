@@ -245,7 +245,7 @@ def build():
     set_run_font(description.add_run("面向电商运营、品类负责人、店铺负责人、采购与定价人员"), size=10, color=MUTED)
     version = doc.add_paragraph()
     version.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(version.add_run("版本 1.1  |  采集增强版"), size=11, color=NAVY, bold=True)
+    set_run_font(version.add_run("版本 1.2  |  价格拐点分析版"), size=11, color=NAVY, bold=True)
     date = doc.add_paragraph()
     date.alignment = WD_ALIGN_PARAGRAPH.CENTER
     set_run_font(date.add_run("2026 年 8 月"), size=9.5, color=MUTED)
@@ -254,7 +254,7 @@ def build():
     add_heading(doc, "目录与快速导航", 1)
     for index, item in enumerate((
         "产品简介与快速开始", "主界面与经营驾驶舱", "价格采集中心", "数据导入",
-        "价格诊断", "定价策略体系", "调价模拟器", "报告中心",
+        "价格诊断", "价格拐点分析", "定价策略体系", "调价模拟器", "报告中心",
         "建议操作流程", "数据安全与常见问题", "后续商用升级",
     ), 1):
         paragraph = doc.add_paragraph()
@@ -276,7 +276,7 @@ def build():
     new_content_page(doc)
     add_heading(doc, "3. 主界面与经营驾驶舱", 1)
     add_figure(doc, "dashboard.png", "图 1  经营驾驶舱：全店价格健康度和优先调价机会")
-    add_body(doc, "左侧导航包含经营驾驶舱、价格采集中心、价格诊断、调价模拟器、报告中心、数据中心和使用指引七个模块。")
+    add_body(doc, "左侧导航包含经营驾驶舱、价格采集中心、价格诊断、价格拐点分析、调价模拟器、报告中心、数据中心和使用指引八个模块。")
     add_bullets(doc, [
         "近 30 天销售额、预计增量机会、综合毛利额与竞品覆盖率。",
         "价格竞争力矩阵、价格健康度分布与优先调价商品。",
@@ -345,9 +345,24 @@ def build():
     ])
 
     new_content_page(doc)
-    add_heading(doc, "7. 定价策略体系", 1)
+    add_heading(doc, "7. 价格拐点分析", 1)
+    add_body(doc, "价格拐点分析比较连续价格的变化方向，只在斜率反转且价格变动超过敏感度阈值时生成信号，并联合销量响应、市场价差和可信度给出建议动作。")
+    add_table(doc, ["信号", "含义", "建议动作"], [
+        ("降价止跌拐点", "价格先下降后回升", "检查销量响应，维持并观察 3—7 天"),
+        ("涨价转弱拐点", "价格先上涨后回落", "核对市场价差后进入调价模拟"),
+        ("无显著拐点", "波动未超过阈值", "保持价格并继续采集历史数据"),
+    ], [2200, 3100, 4060])
+    add_bullets(doc, [
+        "高敏感（1%）适合日常监控，标准（1.8%）适合周度运营，稳健（3%）适合管理层复盘。",
+        "拐点是相关性信号，不代表调价必然造成销量变化。",
+        "执行前应排除大促、缺货、广告投放和竞品规格变化。",
+        "建议从拐点页面进入调价模拟，设置利润安全线后再做小范围实验。",
+    ])
+
+    new_content_page(doc)
+    add_heading(doc, "8. 定价策略体系", 1)
     add_body(doc, "定价不是简单跟随最低价。系统先统一到手价口径，再结合市场价格带、利润底价和商品经营角色，生成进攻、平衡与保守方案。")
-    add_heading(doc, "7.1 商品角色策略", 2)
+    add_heading(doc, "8.1 商品角色策略", 2)
     add_table(doc, ["角色", "经营目标", "建议动作"], [
         ("引流型", "获取访问与新客", "靠近市场低位，不击穿利润底价"),
         ("转化型", "提升下单效率", "中位价附近，先做 7 天实验"),
@@ -356,7 +371,7 @@ def build():
         ("形象型", "强化品牌定位", "跟随标杆，减少频繁波动"),
         ("清仓型", "加快库存周转", "利润与渠道约束内积极降价"),
     ], [1600, 3000, 4760])
-    add_heading(doc, "7.2 策略护栏", 2)
+    add_heading(doc, "8.2 策略护栏", 2)
     add_bullets(doc, [
         "匹配可信度不足时先人工审核，不给自动执行动作。",
         "建议价格不得低于利润底价。",
@@ -366,7 +381,7 @@ def build():
     ])
 
     new_content_page(doc)
-    add_heading(doc, "8. 调价模拟器", 1)
+    add_heading(doc, "9. 调价模拟器", 1)
     add_figure(doc, "simulator.png", "图 3  调价前的销量、销售额与毛利模拟")
     add_steps(doc, [
         "选择需要模拟的商品。",
@@ -378,7 +393,7 @@ def build():
     add_body(doc, "当前版本使用固定价格弹性系数进行演示，模拟结果只用于辅助决策，不应代替实际业务实验。")
 
     new_content_page(doc)
-    add_heading(doc, "9. 报告中心", 1)
+    add_heading(doc, "10. 报告中心", 1)
     add_figure(doc, "reports.png", "图 4  面向管理层的价格竞争力诊断周报")
     add_bullets(doc, [
         "导出调价清单：下载 CSV，供运营人员批量审核和执行。",
@@ -387,10 +402,11 @@ def build():
     add_body(doc, "管理层报告包含综合健康度、诊断商品数、重点优化商品、增量机会、数据覆盖率、经营结论和优先调价表。")
 
     new_content_page(doc)
-    add_heading(doc, "10. 建议操作流程", 1)
+    add_heading(doc, "11. 建议操作流程", 1)
     add_steps(doc, [
         "定期运行授权 API、公开页采集或 CSV 导入。",
         "检查采集成功率、采集时间和同款匹配可信度。",
+        "查看最新价格拐点，核对市场价差与销量响应。",
         "优先处理偏高价格和低价风险商品。",
         "检查商品匹配和竞品样本是否合理。",
         "在模拟器中比较进攻、平衡与保守方案。",
@@ -400,7 +416,7 @@ def build():
         "验证有效后再扩大执行范围。",
     ])
     new_content_page(doc)
-    add_heading(doc, "11. 数据安全与版本边界", 1)
+    add_heading(doc, "12. 数据安全与版本边界", 1)
     add_bullets(doc, [
         "当前数据保存在浏览器 localStorage 中，清除浏览器数据可能导致导入内容丢失。",
         "本地采集服务只监听 127.0.0.1，不对公网开放。",
@@ -410,7 +426,7 @@ def build():
         "真实商用前，应接入合规的数据接口、账号权限、审批记录和服务端数据库。",
         "AI 文字说明来自结构化计算结果，最终定价仍需要业务人员审核。",
     ])
-    add_heading(doc, "12. 常见问题", 1)
+    add_heading(doc, "13. 常见问题", 1)
     for question, answer in (
         ("公开页采集失败", "平台可能采用动态渲染、登录校验或 robots 限制；系统不会绕过控制，请改用官方开放 API 或 CSV。"),
         ("导入后没有商品", "检查 CSV 是否包含“当前价格”字段，并确认价格为大于 0 的数字。"),
@@ -420,7 +436,7 @@ def build():
         ("如何恢复演示数据", "进入数据中心，点击“恢复演示数据”。"),
     ):
         add_body(doc, f"{question}：{answer}", bold_lead=f"{question}：")
-    add_heading(doc, "13. 后续商用升级建议", 1)
+    add_heading(doc, "14. 后续商用升级建议", 1)
     add_bullets(doc, [
         "接入真实平台授权 API、授权续期和调用监控。",
         "增加定时任务、历史报价数据库与异常告警。",
