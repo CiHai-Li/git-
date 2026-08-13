@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoProducts, weeklyTrend, type Product } from "./data/demo";
 import { analyzePriceInflections, analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
+import { demoPriceOffers, inspectPromotionLink, optimizeOffer } from "./lib/promotions.mjs";
 
-type Page = "overview" | "collector" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
+type Page = "overview" | "collector" | "promotions" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
 type AnalyzedProduct = Product & {
   marketMedian: number; weightedPrice: number; priceIndex: number; marginRate: number;
   profitFloor: number; suggestedLow: number; suggestedHigh: number; status: string;
@@ -12,6 +13,7 @@ type AnalyzedProduct = Product & {
 const navItems: { id: Page; label: string; mark: string }[] = [
   { id: "overview", label: "经营驾驶舱", mark: "⌂" },
   { id: "collector", label: "价格采集中心", mark: "◉" },
+  { id: "promotions", label: "优惠策略中心", mark: "券" },
   { id: "diagnosis", label: "价格诊断", mark: "◎" },
   { id: "inflection", label: "价格拐点分析", mark: "⌁" },
   { id: "simulator", label: "调价模拟器", mark: "↗" },
@@ -308,6 +310,40 @@ const demoCollection: CollectionResult[] = [
   { id: "COL-004", platform: "苏宁易购", sku: "P003", title: "飞鹤 星飞帆 3段 700g", price: 249, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:39:00.000Z" },
 ];
 
+type ClaimMode = "inspect" | "confirm" | "rules";
+
+function PromotionCenter() {
+  const [claimMode, setClaimMode] = useState<ClaimMode>("confirm");
+  const [link, setLink] = useState("");
+  const [linkResult, setLinkResult] = useState<{ valid: boolean; platform?: string; reason?: string }>();
+  const [authorized, setAuthorized] = useState<Record<string, boolean>>({ 京东: true, 天猫: false, 拼多多: false });
+  const offers = demoPriceOffers.map((offer) => optimizeOffer(offer, true));
+  const best = [...offers].sort((a, b) => a.finalPrice - b.finalPrice)[0];
+  const inspectLink = async () => {
+    const local = inspectPromotionLink(link);
+    setLinkResult({ ...local, platform: local.platform ? String(local.platform) : undefined });
+    if (!local.valid) return;
+    try {
+      const response = await fetch("http://127.0.0.1:8790/api/promotions/inspect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: link }) });
+      setLinkResult(await response.json());
+    } catch { /* 前端本地规则已完成初检，Python 服务可选。 */ }
+  };
+  return <section className="page-section promotion-page">
+    <div className="page-title"><div><span className="eyebrow">真实到手价引擎</span><h1>优惠策略中心</h1><p>统一识别平台、店铺、品类、会员和运费优惠，并保留每一项价格条件。</p></div><span className="workflow-pill">工作流 MVP · 演示数据</span></div>
+    <div className="promo-kpis"><div><span>公开售价</span><b>¥{best.salePrice}</b><small>可直接比价</small></div><div><span>可实现到手价</span><b className="promo-best">¥{best.finalPrice}</b><small>含可领取优惠</small></div><div><span>优惠影响</span><b>-¥{best.discount}</b><small>{best.applied.length} 项叠加</small></div><div><span>核算可信度</span><b>{best.confidence}%</b><small>价格条件已留痕</small></div></div>
+    <div className="promotion-grid"><article className="panel"><div className="panel-head"><div><h2>一次授权，持续复用登录状态</h2><p>账号登录在平台官方页面完成，价策 AI 不收集密码</p></div></div>
+      <div className="auth-list">{["京东", "天猫", "拼多多"].map((platform) => <div key={platform}><span>{platform.slice(0, 1)}</span><div><b>{platform}</b><small>{authorized[platform] ? "本机授权状态可用" : "采集公开价；领取优惠前需授权"}</small></div><em className={authorized[platform] ? "ready" : "waiting"}>{authorized[platform] ? "● 已授权" : "未授权"}</em><button onClick={() => setAuthorized((state) => ({ ...state, [platform]: !state[platform] }))}>{authorized[platform] ? "停用" : "首次授权"}</button></div>)}</div>
+      <div className="auth-note">授权状态只登记在用户本机；遇到验证码、实名、付费会员或支付步骤立即暂停并交还用户。</div>
+    </article><article className="panel"><div className="panel-head"><div><h2>优惠领取策略</h2><p>默认只在产生真实价格收益时触发</p></div></div>
+      <div className="claim-modes">{([['inspect','仅识别','不触发领取'],['confirm','逐次确认','推荐，操作透明'],['rules','规则授权','按金额与品类自动领取']] as const).map(([id, label, note]) => <button key={id} className={claimMode === id ? "active" : ""} onClick={() => setClaimMode(id)}><b>{label}</b><small>{note}</small></button>)}</div>
+      <div className="claim-rule"><b>当前规则</b><span>{claimMode === "inspect" ? "识别全部优惠并计算，但不领取。" : claimMode === "confirm" ? "领取前展示优惠、有效期和限制，由用户确认。" : "仅自动领取免费、无需实名且能降低目标商品价格的优惠。"}</span></div>
+    </article></div>
+    <article className="panel link-inspector"><div><h2>商家优惠策略与链接识别</h2><p>商家可提交优惠链接；系统先校验 HTTPS、平台域名和活动标识，再进入领取策略。</p></div><label><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="粘贴京东、淘宝/天猫、拼多多等官方优惠链接" /><button className="primary-button" onClick={inspectLink}>识别优惠</button></label>{linkResult && <div className={`link-result ${linkResult.valid ? "valid" : "invalid"}`}>{linkResult.valid ? `✓ 已识别为${linkResult.platform}官方域名；下一步读取门槛、有效期与可叠加关系。` : `× ${linkResult.reason}`}</div>}</article>
+    <article className="table-card real-price-table"><div className="table-caption"><div><h2>真实到手价拆解</h2><p>市场诊断只使用可公开复现的价格；会员/账户专属价单独展示</p></div><span>{offers.length} 个平台</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>划线价</th><th>公开售价</th><th>最优可实现价</th><th>优惠组成</th><th>价格口径</th><th>可信度</th></tr></thead><tbody>{offers.map((offer) => <tr key={offer.platform}><td><b>{offer.platform}</b></td><td className="list-price">¥{offer.listPrice}</td><td>¥{offer.salePrice}</td><td><b className="suggested">¥{offer.finalPrice}</b></td><td>{offer.applied.map((item: { name: string }) => item.name).join(" + ") || "无"}</td><td><span className={`basis-pill ${offer.comparable ? "public" : "personal"}`}>{offer.comparable ? (offer.priceBasis === "held" ? "已持券价" : "条件可实现价") : "账户专属价"}</span></td><td>{offer.confidence}%</td></tr>)}</tbody></table></div></article>
+    <div className="price-truth-note"><b>价格不失真原则</b><span>公开价、条件可领取价、已持券价分别存储；未验证的优惠不写成“到手价”，个性化价格不混入市场中位数，所有结果带采集时间、适用条件和置信度。</span></div>
+  </section>;
+}
+
 function CollectorCenter() {
   const [mode, setMode] = useState<"demo" | "live">("demo");
   const [urls, setUrls] = useState("");
@@ -407,6 +443,7 @@ function App() {
     <main><header className="topbar"><div className="mobile-brand"><b>价策 AI</b></div><div className="store-switch"><span>示例商家 · 全国渠道</span><b>⌄</b></div><div className="top-actions"><span className="data-time">数据更新于 10 分钟前</span><button aria-label="消息通知">◌<i /></button><button className="avatar" aria-label="账户">示</button></div></header><div className="content">
       {page === "overview" && <Overview products={analyzed} onNavigate={navigate} />}
       {page === "collector" && <CollectorCenter />}
+      {page === "promotions" && <PromotionCenter />}
       {page === "diagnosis" && <Diagnosis products={analyzed} onSelect={setSelected} />}
       {page === "inflection" && <InflectionAnalysis products={analyzed} onSimulate={(id) => { setSimulatorId(id); navigate("simulator"); }} />}
       {page === "simulator" && <Simulator products={analyzed} initialId={simulatorId} />}
