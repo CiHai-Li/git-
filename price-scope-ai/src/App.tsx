@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoProducts, weeklyTrend, type Product } from "./data/demo";
 import { analyzePriceInflections, analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
+import { demoPriceOffers, inspectPromotionLink, optimizeOffer } from "./lib/promotions.mjs";
+import { buildBrandHeadSkuReport, buildCollectionPlan, filterCatalog } from "./lib/selection.mjs";
 
-type Page = "overview" | "collector" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
+type Page = "overview" | "collector" | "promotions" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
 type AnalyzedProduct = Product & {
   marketMedian: number; weightedPrice: number; priceIndex: number; marginRate: number;
   profitFloor: number; suggestedLow: number; suggestedHigh: number; status: string;
@@ -12,6 +14,7 @@ type AnalyzedProduct = Product & {
 const navItems: { id: Page; label: string; mark: string }[] = [
   { id: "overview", label: "经营驾驶舱", mark: "⌂" },
   { id: "collector", label: "价格采集中心", mark: "◉" },
+  { id: "promotions", label: "优惠策略中心", mark: "券" },
   { id: "diagnosis", label: "价格诊断", mark: "◎" },
   { id: "inflection", label: "价格拐点分析", mark: "⌁" },
   { id: "simulator", label: "调价模拟器", mark: "↗" },
@@ -283,15 +286,30 @@ function InflectionAnalysis({ products, onSimulate }: { products: AnalyzedProduc
 
 function Reports({ products }: { products: AnalyzedProduct[] }) {
   const summary = summarizePortfolio(products);
+  const reportBrands = [...new Set(products.map((item) => item.brand))];
+  const defaultBrand = reportBrands.slice().sort((a, b) => products.filter((item) => item.brand === b).length - products.filter((item) => item.brand === a).length)[0] || "";
+  const [reportBrand, setReportBrand] = useState(defaultBrand);
+  const [headCount, setHeadCount] = useState(5);
+  const headSkus = buildBrandHeadSkuReport(products, reportBrand, headCount) as (AnalyzedProduct & { rank: number; minPrice: number; maxPrice: number; cheapest: string; spread: number })[];
+  const reportPlatforms = [...new Set(headSkus.flatMap((item) => item.offers.map((offer) => offer.platform)))];
   const exportCsv = () => {
     const header = ["商品编码","品牌","系列","段位","规格","当前价","市场中位价","价格指数","价格状态","建议低价","建议高价","毛利率","匹配可信度"];
     const rows = products.map((item) => [item.id,item.brand,item.series,item.stage,item.spec,item.currentPrice,item.marketMedian,item.priceIndex,item.status,item.suggestedLow,item.suggestedHigh,item.marginRate,item.confidence]);
     downloadText("价策AI-调价诊断清单.csv", `\uFEFF${[header, ...rows].map((row) => row.join(",")).join("\n")}`);
   };
+  const exportBrandReport = () => {
+    const header = ["排名","品牌","商品编码","商品","规格","近30天销量",...reportPlatforms,"最低价平台","最低价","最高价","跨平台价差率"];
+    const rows = headSkus.map((item) => [item.rank,item.brand,item.id,`${item.series}${item.stage}`,item.spec,item.sales30d,...reportPlatforms.map((platform) => item.offers.find((offer) => offer.platform === platform)?.price ?? ""),item.cheapest,item.minPrice,item.maxPrice,`${item.spread}%`]);
+    downloadText(`价策AI-${reportBrand}-头部SKU跨平台价格报告.csv`, `\uFEFF${[header,...rows].map((row) => row.join(",")).join("\n")}`);
+  };
   return <section className="page-section report-page"><div className="page-title"><div><span className="eyebrow">可视化输出</span><h1>报告中心</h1><p>生成适合运营执行和管理层汇报的定价报告。</p></div><div className="button-row"><button className="secondary-button" onClick={exportCsv}>导出调价清单</button><button className="primary-button" onClick={() => window.print()}>打印 / 保存 PDF</button></div></div>
     <div className="report-cover"><div><span className="report-brand">PRICE SCOPE / 价策 AI</span><h2>母婴奶粉价格竞争力<br />诊断周报</h2><p>示例商家 · 全国渠道 · 数据周期：近30天</p></div><div className="report-score"><small>综合健康度</small><b>{Math.round(summary.healthy / summary.total * 100)}</b><span>/ 100</span></div></div>
     <div className="report-kpis"><div><span>诊断商品</span><b>{summary.total}</b><small>个</small></div><div><span>重点优化</span><b>{summary.high}</b><small>个</small></div><div><span>增量机会</span><b>{summary.opportunity}</b><small>万元</small></div><div><span>数据覆盖</span><b>{summary.coverage}</b><small>%</small></div></div>
     <article className="panel report-summary"><h2>本周经营结论</h2><div className="summary-grid"><div><span>01</span><p><b>价格偏高集中在头部品牌</b>重点关注金领冠珍护、菁护与合生元派星，建议采用分层调价而非全线降价。</p></div><div><span>02</span><p><b>引流商品仍有利润空间</b>君乐宝乐铂和珍护3段具备流量优势，可保持价格并强化活动曝光。</p></div><div><span>03</span><p><b>建议先小范围实验</b>对前4个高优先级商品进行7天调价实验，观察转化和毛利后再扩大范围。</p></div></div></article>
+    <article className="table-card brand-report"><div className="brand-report-head"><div><span className="eyebrow">品牌价格雷达</span><h2>同品牌头部 SKU 跨平台价格报告</h2><p>按近 30 天销量选取头部商品，统一规格后横向比较平台公开价。</p></div><div className="brand-report-actions"><label>品牌<select value={reportBrand} onChange={(event) => setReportBrand(event.target.value)}>{reportBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label><label>头部范围<select value={headCount} onChange={(event) => setHeadCount(Number(event.target.value))}><option value={3}>Top 3</option><option value={5}>Top 5</option><option value={10}>Top 10</option></select></label><button className="secondary-button" onClick={exportBrandReport}>导出品牌报告</button></div></div>
+      <div className="brand-report-kpis"><div><span>目标品牌</span><b>{reportBrand}</b></div><div><span>头部 SKU</span><b>{headSkus.length}<small>个</small></b></div><div><span>覆盖平台</span><b>{reportPlatforms.length}<small>个</small></b></div><div><span>最大价差</span><b>{Math.max(0,...headSkus.map((item) => item.spread))}<small>%</small></b></div></div>
+      <div className="table-scroll"><table><thead><tr><th>排名</th><th>头部 SKU</th><th>销量</th>{reportPlatforms.map((platform) => <th key={platform}>{platform}</th>)}<th>最低价</th><th>价差率</th><th>价格结论</th></tr></thead><tbody>{headSkus.map((item) => <tr key={item.id}><td><span className="rank small">{item.rank}</span></td><td><b>{item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.id}</small></td><td><b>{item.sales30d}</b><small className="cell-sub">近30天</small></td>{reportPlatforms.map((platform) => { const price = item.offers.find((offer) => offer.platform === platform)?.price; return <td key={platform} className={price === item.minPrice ? "platform-low" : ""}>{price ? `¥${price}` : "—"}</td>; })}<td><b className="suggested">{item.cheapest} ¥{item.minPrice}</b></td><td className={item.spread >= 8 ? "cell-danger" : ""}>{item.spread}%</td><td>{item.spread >= 8 ? "平台价差明显，检查优惠口径" : item.spread >= 4 ? "存在跟价空间" : "价格带较稳定"}</td></tr>)}</tbody></table></div>
+      <div className="brand-report-note"><b>报告口径</b><span>头部 SKU 按商家近 30 天销量排序；同品牌不等于同款，报告仍按系列、段位和规格逐 SKU 比较。账户专属优惠不混入本表，需在优惠策略中心单独查看。</span></div></article>
     <div className="table-card report-table"><div className="table-scroll"><table><thead><tr><th>优先级</th><th>商品</th><th>当前价</th><th>市场价</th><th>建议价格</th><th>诊断</th><th>建议动作</th></tr></thead><tbody>{products.slice().sort((a,b) => b.priceIndex-a.priceIndex).slice(0,8).map((item,index) => <tr key={item.id}><td><span className="rank small">{index+1}</span></td><td><b>{item.brand} {item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.role}</small></td><td>¥{item.currentPrice}</td><td>¥{item.marketMedian}</td><td><b className="suggested">¥{item.suggestedLow}-{item.suggestedHigh}</b></td><td><StatusBadge product={item} /></td><td>{item.status.includes("偏高") ? "7天调价实验" : "保持并监控"}</td></tr>)}</tbody></table></div></div>
   </section>;
 }
@@ -308,18 +326,83 @@ const demoCollection: CollectionResult[] = [
   { id: "COL-004", platform: "苏宁易购", sku: "P003", title: "飞鹤 星飞帆 3段 700g", price: 249, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:39:00.000Z" },
 ];
 
-function CollectorCenter() {
-  const [mode, setMode] = useState<"demo" | "live">("demo");
+type ClaimMode = "inspect" | "confirm" | "rules";
+
+function PromotionCenter() {
+  const [claimMode, setClaimMode] = useState<ClaimMode>("confirm");
+  const [link, setLink] = useState("");
+  const [linkResult, setLinkResult] = useState<{ valid: boolean; platform?: string; reason?: string }>();
+  const [authorized, setAuthorized] = useState<Record<string, boolean>>({ 京东: true, 天猫: false, 拼多多: false });
+  const offers = demoPriceOffers.map((offer) => optimizeOffer(offer, true));
+  const best = [...offers].sort((a, b) => a.finalPrice - b.finalPrice)[0];
+  const inspectLink = async () => {
+    const local = inspectPromotionLink(link);
+    setLinkResult({ ...local, platform: local.platform ? String(local.platform) : undefined });
+    if (!local.valid) return;
+    try {
+      const response = await fetch("http://127.0.0.1:8790/api/promotions/inspect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url: link }) });
+      setLinkResult(await response.json());
+    } catch { /* 前端本地规则已完成初检，Python 服务可选。 */ }
+  };
+  return <section className="page-section promotion-page">
+    <div className="page-title"><div><span className="eyebrow">真实到手价引擎</span><h1>优惠策略中心</h1><p>统一识别平台、店铺、品类、会员和运费优惠，并保留每一项价格条件。</p></div><span className="workflow-pill">工作流 MVP · 演示数据</span></div>
+    <div className="promo-kpis"><div><span>公开售价</span><b>¥{best.salePrice}</b><small>可直接比价</small></div><div><span>可实现到手价</span><b className="promo-best">¥{best.finalPrice}</b><small>含可领取优惠</small></div><div><span>优惠影响</span><b>-¥{best.discount}</b><small>{best.applied.length} 项叠加</small></div><div><span>核算可信度</span><b>{best.confidence}%</b><small>价格条件已留痕</small></div></div>
+    <div className="promotion-grid"><article className="panel"><div className="panel-head"><div><h2>一次授权，持续复用登录状态</h2><p>账号登录在平台官方页面完成，价策 AI 不收集密码</p></div></div>
+      <div className="auth-list">{["京东", "天猫", "拼多多"].map((platform) => <div key={platform}><span>{platform.slice(0, 1)}</span><div><b>{platform}</b><small>{authorized[platform] ? "本机授权状态可用" : "采集公开价；领取优惠前需授权"}</small></div><em className={authorized[platform] ? "ready" : "waiting"}>{authorized[platform] ? "● 已授权" : "未授权"}</em><button onClick={() => setAuthorized((state) => ({ ...state, [platform]: !state[platform] }))}>{authorized[platform] ? "停用" : "首次授权"}</button></div>)}</div>
+      <div className="auth-note">授权状态只登记在用户本机；遇到验证码、实名、付费会员或支付步骤立即暂停并交还用户。</div>
+    </article><article className="panel"><div className="panel-head"><div><h2>优惠领取策略</h2><p>默认只在产生真实价格收益时触发</p></div></div>
+      <div className="claim-modes">{([['inspect','仅识别','不触发领取'],['confirm','逐次确认','推荐，操作透明'],['rules','规则授权','按金额与品类自动领取']] as const).map(([id, label, note]) => <button key={id} className={claimMode === id ? "active" : ""} onClick={() => setClaimMode(id)}><b>{label}</b><small>{note}</small></button>)}</div>
+      <div className="claim-rule"><b>当前规则</b><span>{claimMode === "inspect" ? "识别全部优惠并计算，但不领取。" : claimMode === "confirm" ? "领取前展示优惠、有效期和限制，由用户确认。" : "仅自动领取免费、无需实名且能降低目标商品价格的优惠。"}</span></div>
+    </article></div>
+    <article className="panel link-inspector"><div><h2>商家优惠策略与链接识别</h2><p>商家可提交优惠链接；系统先校验 HTTPS、平台域名和活动标识，再进入领取策略。</p></div><label><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="粘贴京东、淘宝/天猫、拼多多等官方优惠链接" /><button className="primary-button" onClick={inspectLink}>识别优惠</button></label>{linkResult && <div className={`link-result ${linkResult.valid ? "valid" : "invalid"}`}>{linkResult.valid ? `✓ 已识别为${linkResult.platform}官方域名；下一步读取门槛、有效期与可叠加关系。` : `× ${linkResult.reason}`}</div>}</article>
+    <article className="table-card real-price-table"><div className="table-caption"><div><h2>真实到手价拆解</h2><p>市场诊断只使用可公开复现的价格；会员/账户专属价单独展示</p></div><span>{offers.length} 个平台</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>划线价</th><th>公开售价</th><th>最优可实现价</th><th>优惠组成</th><th>价格口径</th><th>可信度</th></tr></thead><tbody>{offers.map((offer) => <tr key={offer.platform}><td><b>{offer.platform}</b></td><td className="list-price">¥{offer.listPrice}</td><td>¥{offer.salePrice}</td><td><b className="suggested">¥{offer.finalPrice}</b></td><td>{offer.applied.map((item: { name: string }) => item.name).join(" + ") || "无"}</td><td><span className={`basis-pill ${offer.comparable ? "public" : "personal"}`}>{offer.comparable ? (offer.priceBasis === "held" ? "已持券价" : "条件可实现价") : "账户专属价"}</span></td><td>{offer.confidence}%</td></tr>)}</tbody></table></div></article>
+    <div className="price-truth-note"><b>价格不失真原则</b><span>公开价、条件可领取价、已持券价分别存储；未验证的优惠不写成“到手价”，个性化价格不混入市场中位数，所有结果带采集时间、适用条件和置信度。</span></div>
+  </section>;
+}
+
+function CollectorCenter({ products }: { products: Product[] }) {
+  const [mode, setMode] = useState<"demo" | "catalog" | "live">("demo");
   const [urls, setUrls] = useState("");
   const [results, setResults] = useState<CollectionResult[]>(demoCollection);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("当前显示稳定的面试演示快照，不代表实时平台价格。");
+  const [brand, setBrand] = useState("");
+  const [series, setSeries] = useState("");
+  const [spec, setSpec] = useState("");
+  const [query, setQuery] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["京东", "天猫", "拼多多"]);
+  const [priceScope, setPriceScope] = useState("claimable");
+  const brands = [...new Set(products.map((item) => item.brand))].sort();
+  const seriesOptions = [...new Set(products.filter((item) => !brand || item.brand === brand).map((item) => item.series))].sort();
+  const specOptions = [...new Set(products.filter((item) => (!brand || item.brand === brand) && (!series || item.series === series)).map((item) => item.spec))].sort();
+  const catalog = filterCatalog(products, { brand, series, spec, query }) as Product[];
+  const collectionPlan = buildCollectionPlan(products, selectedIds, selectedPlatforms, priceScope);
+  const toggle = (value: string, values: string[], setter: (next: string[]) => void) => setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   const runCollection = async () => {
     if (mode === "demo") {
       setRunning(true);
       window.setTimeout(() => {
         setResults(demoCollection.map((item) => ({ ...item, collectedAt: new Date().toISOString() })));
         setMessage("演示快照已刷新。切换到“本地采集服务”可采集已授权的公开商品页。");
+        setRunning(false);
+      }, 700);
+      return;
+    }
+    if (mode === "catalog") {
+      if (!selectedIds.length) { setMessage("请至少勾选一个需要监控的商品 SKU。"); return; }
+      if (!selectedPlatforms.length) { setMessage("请至少选择一个目标平台。"); return; }
+      setRunning(true);
+      window.setTimeout(() => {
+        const generated = collectionPlan.map((task: { id: string; sku: string; title: string; platform: string; priceScope: string }, index: number) => {
+          const product = products.find((item) => item.id === task.sku)!;
+          const offer = product.offers.find((item) => item.platform === task.platform);
+          return { id: `PLAN-${index + 1}`, platform: task.platform, sku: task.sku, title: task.title,
+            price: offer?.price, method: offer ? `货盘匹配 · ${task.priceScope === "public" ? "公开价" : task.priceScope === "claimable" ? "含可领优惠" : "已持券价"}` : "待平台同款搜索",
+            status: offer ? "success" as const : "failed" as const, collectedAt: new Date().toISOString(), error: offer ? undefined : "未找到高置信度同款，已进入人工复核队列" };
+        });
+        setResults(generated);
+        setMessage(`已生成 ${collectionPlan.length} 个“SKU × 平台”采集任务；成功匹配 ${generated.filter((item: CollectionResult) => item.status === "success").length} 个，其余进入人工复核。`);
         setRunning(false);
       }, 700);
       return;
@@ -340,11 +423,18 @@ function CollectorCenter() {
   const successful = results.filter((item) => item.status === "success");
   const platforms = new Set(successful.map((item) => item.platform)).size;
   return <section className="page-section collector-page">
-    <div className="page-title"><div><span className="eyebrow">市场情报入口</span><h1>价格采集中心</h1><p>从国内主流电商平台获取公开商品价格，形成可追溯的竞品报价快照。</p></div><button className="primary-button" onClick={runCollection} disabled={running}>{running ? "采集中…" : mode === "demo" ? "刷新演示快照" : "立即采集"}</button></div>
+    <div className="page-title"><div><span className="eyebrow">市场情报入口</span><h1>价格采集中心</h1><p>按品牌与 SKU 选择监控商品，或直接提交商品链接，形成可追溯的竞品报价快照。</p></div><button className="primary-button" onClick={runCollection} disabled={running}>{running ? "采集中…" : mode === "demo" ? "刷新演示快照" : mode === "catalog" ? "生成采集任务" : "立即采集"}</button></div>
     <div className="collector-kpis"><div><span>成功报价</span><b>{successful.length}</b><small>条</small></div><div><span>覆盖平台</span><b>{platforms}</b><small>个</small></div><div><span>成功率</span><b>{results.length ? Math.round(successful.length / results.length * 100) : 0}</b><small>%</small></div><div><span>采集策略</span><b className="strategy-value">限速</b><small>≥ 1.2 秒/页</small></div></div>
-    <div className="collector-layout"><article className="panel collector-control"><div className="panel-head"><div><h2>采集任务</h2><p>演示与真实采集明确隔离</p></div><span className={`mode-pill ${mode}`}>{mode === "demo" ? "DEMO" : "LOCAL"}</span></div>
-      <div className="mode-switch"><button className={mode === "demo" ? "active" : ""} onClick={() => { setMode("demo"); setMessage("当前显示稳定的面试演示快照，不代表实时平台价格。"); }}>演示快照</button><button className={mode === "live" ? "active" : ""} onClick={() => { setMode("live"); setMessage("本地服务仅接受京东、天猫、淘宝、拼多多、苏宁和唯品会 HTTPS 链接。"); }}>本地采集服务</button></div>
-      {mode === "demo" ? <div className="demo-board"><span>面试展示模式</span><h3>无需平台密钥，也能演示完整数据链路</h3><p>刷新后会生成新的采集时间，再进入价格诊断、调价模拟与报告输出。</p></div> : <label className="url-input"><span>公开商品页链接</span><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={"https://item.jd.com/商品编号.html\nhttps://detail.tmall.com/item.htm?id=商品编号"} /><small>每行一个。请仅采集你有权访问的公开页面，不绕过登录、验证码或访问限制。</small></label>}
+    <div className="collector-layout"><article className="panel collector-control"><div className="panel-head"><div><h2>采集任务</h2><p>演示、货盘选品与链接采集明确隔离</p></div><span className={`mode-pill ${mode}`}>{mode === "demo" ? "DEMO" : mode === "catalog" ? "SKU" : "LOCAL"}</span></div>
+      <div className="mode-switch three"><button className={mode === "demo" ? "active" : ""} onClick={() => { setMode("demo"); setMessage("当前显示稳定的面试演示快照，不代表实时平台价格。"); }}>演示快照</button><button className={mode === "catalog" ? "active" : ""} onClick={() => { setMode("catalog"); setMessage("先按品牌筛选并勾选 SKU，再选择目标平台和价格口径。"); }}>按品牌选品</button><button className={mode === "live" ? "active" : ""} onClick={() => { setMode("live"); setMessage("本地服务仅接受京东、天猫、淘宝、拼多多、苏宁和唯品会 HTTPS 链接。"); }}>按链接采集</button></div>
+      {mode === "demo" && <div className="demo-board"><span>面试展示模式</span><h3>无需平台密钥，也能演示完整数据链路</h3><p>刷新后会生成新的采集时间，再进入价格诊断、调价模拟与报告输出。</p></div>}
+      {mode === "catalog" && <div className="catalog-picker"><div className="catalog-filters"><label>品类<select disabled><option>母婴奶粉</option></select></label><label>品牌<select value={brand} onChange={(event) => { setBrand(event.target.value); setSeries(""); setSpec(""); }}><option value="">全部品牌</option>{brands.map((item) => <option key={item}>{item}</option>)}</select></label><label>系列<select value={series} onChange={(event) => { setSeries(event.target.value); setSpec(""); }}><option value="">全部系列</option>{seriesOptions.map((item) => <option key={item}>{item}</option>)}</select></label><label>规格<select value={spec} onChange={(event) => setSpec(event.target.value)}><option value="">全部规格</option>{specOptions.map((item) => <option key={item}>{item}</option>)}</select></label></div>
+        <label className="catalog-search"><span>搜索商品</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="商品名称或 SKU" /></label>
+        <div className="catalog-toolbar"><span>找到 {catalog.length} 个商品，已选 {selectedIds.length} 个</span><button onClick={() => setSelectedIds(catalog.map((item) => item.id))}>选择当前全部</button><button onClick={() => setSelectedIds([])}>清空</button></div>
+        <div className="sku-list">{catalog.map((product) => <label key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""}><input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggle(product.id, selectedIds, setSelectedIds)} /><span>{product.brand.slice(0, 1)}</span><div><b>{product.brand} {product.series} {product.stage}</b><small>{product.spec} · {product.id} · {product.role}</small></div><em>{product.stock} 件库存</em></label>)}</div>
+        <div className="task-options"><div><b>目标平台</b>{["京东", "天猫", "拼多多", "即时零售"].map((platform) => <button key={platform} className={selectedPlatforms.includes(platform) ? "active" : ""} onClick={() => toggle(platform, selectedPlatforms, setSelectedPlatforms)}>{platform}</button>)}</div><label><b>价格口径</b><select value={priceScope} onChange={(event) => setPriceScope(event.target.value)}><option value="public">公开售价</option><option value="claimable">条件可实现价</option><option value="held">当前账户已持券价</option></select></label></div>
+        <div className="plan-summary"><b>{collectionPlan.length}</b><span>个待生成任务</span><small>{selectedIds.length} 个 SKU × {selectedPlatforms.length} 个平台</small></div></div>}
+      {mode === "live" && <label className="url-input"><span>公开商品页链接</span><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={"https://item.jd.com/商品编号.html\nhttps://detail.tmall.com/item.htm?id=商品编号"} /><small>每行一个。请仅采集你有权访问的公开页面，不绕过登录、验证码或访问限制。</small></label>}
       <div className="collector-message">{message}</div>
     </article><article className="panel platform-panel"><div className="panel-head"><div><h2>平台接入矩阵</h2><p>生产环境优先使用开放平台 API</p></div></div>{[
         ["京东", "开放 API / 公开页", "已适配"], ["天猫 / 淘宝", "开放 API / 公开页", "已适配"], ["拼多多", "开放 API / 公开页", "已适配"], ["苏宁易购", "公开页", "已适配"], ["唯品会", "公开页", "已适配"],
@@ -406,7 +496,8 @@ function App() {
   return <div className="app-shell"><aside className="sidebar"><div className="brand"><span>价</span><div><b>价策 AI</b><small>PRICE SCOPE</small></div></div><nav>{navItems.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => navigate(item.id)}><span>{item.mark}</span>{item.label}{item.id === "diagnosis" && <em>{analyzed.filter((product) => product.status.includes("偏高")).length}</em>}</button>)}</nav><div className="sidebar-card"><span>AI</span><b>本周策略已更新</b><p>{analyzed.filter((product) => product.status.includes("偏高")).length} 个商品建议优先处理</p><button onClick={() => navigate("diagnosis")}>查看建议</button></div><div className="sidebar-user"><span>示</span><div><b>示例商家</b><small>管理员</small></div><button aria-label="更多账户选项">•••</button></div></aside>
     <main><header className="topbar"><div className="mobile-brand"><b>价策 AI</b></div><div className="store-switch"><span>示例商家 · 全国渠道</span><b>⌄</b></div><div className="top-actions"><span className="data-time">数据更新于 10 分钟前</span><button aria-label="消息通知">◌<i /></button><button className="avatar" aria-label="账户">示</button></div></header><div className="content">
       {page === "overview" && <Overview products={analyzed} onNavigate={navigate} />}
-      {page === "collector" && <CollectorCenter />}
+      {page === "collector" && <CollectorCenter products={products} />}
+      {page === "promotions" && <PromotionCenter />}
       {page === "diagnosis" && <Diagnosis products={analyzed} onSelect={setSelected} />}
       {page === "inflection" && <InflectionAnalysis products={analyzed} onSimulate={(id) => { setSimulatorId(id); navigate("simulator"); }} />}
       {page === "simulator" && <Simulator products={analyzed} initialId={simulatorId} />}
