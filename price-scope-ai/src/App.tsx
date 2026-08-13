@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { demoProducts, weeklyTrend, type Product } from "./data/demo";
 import { analyzePriceInflections, analyzeProduct, parseCsv, simulatePrice, summarizePortfolio } from "./lib/pricing.mjs";
 import { demoPriceOffers, inspectPromotionLink, optimizeOffer } from "./lib/promotions.mjs";
-import { buildCollectionPlan, filterCatalog } from "./lib/selection.mjs";
+import { buildBrandHeadSkuReport, buildCollectionPlan, filterCatalog } from "./lib/selection.mjs";
 
 type Page = "overview" | "collector" | "promotions" | "diagnosis" | "inflection" | "simulator" | "reports" | "data" | "guide";
 type AnalyzedProduct = Product & {
@@ -286,15 +286,30 @@ function InflectionAnalysis({ products, onSimulate }: { products: AnalyzedProduc
 
 function Reports({ products }: { products: AnalyzedProduct[] }) {
   const summary = summarizePortfolio(products);
+  const reportBrands = [...new Set(products.map((item) => item.brand))];
+  const defaultBrand = reportBrands.slice().sort((a, b) => products.filter((item) => item.brand === b).length - products.filter((item) => item.brand === a).length)[0] || "";
+  const [reportBrand, setReportBrand] = useState(defaultBrand);
+  const [headCount, setHeadCount] = useState(5);
+  const headSkus = buildBrandHeadSkuReport(products, reportBrand, headCount) as (AnalyzedProduct & { rank: number; minPrice: number; maxPrice: number; cheapest: string; spread: number })[];
+  const reportPlatforms = [...new Set(headSkus.flatMap((item) => item.offers.map((offer) => offer.platform)))];
   const exportCsv = () => {
     const header = ["商品编码","品牌","系列","段位","规格","当前价","市场中位价","价格指数","价格状态","建议低价","建议高价","毛利率","匹配可信度"];
     const rows = products.map((item) => [item.id,item.brand,item.series,item.stage,item.spec,item.currentPrice,item.marketMedian,item.priceIndex,item.status,item.suggestedLow,item.suggestedHigh,item.marginRate,item.confidence]);
     downloadText("价策AI-调价诊断清单.csv", `\uFEFF${[header, ...rows].map((row) => row.join(",")).join("\n")}`);
   };
+  const exportBrandReport = () => {
+    const header = ["排名","品牌","商品编码","商品","规格","近30天销量",...reportPlatforms,"最低价平台","最低价","最高价","跨平台价差率"];
+    const rows = headSkus.map((item) => [item.rank,item.brand,item.id,`${item.series}${item.stage}`,item.spec,item.sales30d,...reportPlatforms.map((platform) => item.offers.find((offer) => offer.platform === platform)?.price ?? ""),item.cheapest,item.minPrice,item.maxPrice,`${item.spread}%`]);
+    downloadText(`价策AI-${reportBrand}-头部SKU跨平台价格报告.csv`, `\uFEFF${[header,...rows].map((row) => row.join(",")).join("\n")}`);
+  };
   return <section className="page-section report-page"><div className="page-title"><div><span className="eyebrow">可视化输出</span><h1>报告中心</h1><p>生成适合运营执行和管理层汇报的定价报告。</p></div><div className="button-row"><button className="secondary-button" onClick={exportCsv}>导出调价清单</button><button className="primary-button" onClick={() => window.print()}>打印 / 保存 PDF</button></div></div>
     <div className="report-cover"><div><span className="report-brand">PRICE SCOPE / 价策 AI</span><h2>母婴奶粉价格竞争力<br />诊断周报</h2><p>示例商家 · 全国渠道 · 数据周期：近30天</p></div><div className="report-score"><small>综合健康度</small><b>{Math.round(summary.healthy / summary.total * 100)}</b><span>/ 100</span></div></div>
     <div className="report-kpis"><div><span>诊断商品</span><b>{summary.total}</b><small>个</small></div><div><span>重点优化</span><b>{summary.high}</b><small>个</small></div><div><span>增量机会</span><b>{summary.opportunity}</b><small>万元</small></div><div><span>数据覆盖</span><b>{summary.coverage}</b><small>%</small></div></div>
     <article className="panel report-summary"><h2>本周经营结论</h2><div className="summary-grid"><div><span>01</span><p><b>价格偏高集中在头部品牌</b>重点关注金领冠珍护、菁护与合生元派星，建议采用分层调价而非全线降价。</p></div><div><span>02</span><p><b>引流商品仍有利润空间</b>君乐宝乐铂和珍护3段具备流量优势，可保持价格并强化活动曝光。</p></div><div><span>03</span><p><b>建议先小范围实验</b>对前4个高优先级商品进行7天调价实验，观察转化和毛利后再扩大范围。</p></div></div></article>
+    <article className="table-card brand-report"><div className="brand-report-head"><div><span className="eyebrow">品牌价格雷达</span><h2>同品牌头部 SKU 跨平台价格报告</h2><p>按近 30 天销量选取头部商品，统一规格后横向比较平台公开价。</p></div><div className="brand-report-actions"><label>品牌<select value={reportBrand} onChange={(event) => setReportBrand(event.target.value)}>{reportBrands.map((brand) => <option key={brand}>{brand}</option>)}</select></label><label>头部范围<select value={headCount} onChange={(event) => setHeadCount(Number(event.target.value))}><option value={3}>Top 3</option><option value={5}>Top 5</option><option value={10}>Top 10</option></select></label><button className="secondary-button" onClick={exportBrandReport}>导出品牌报告</button></div></div>
+      <div className="brand-report-kpis"><div><span>目标品牌</span><b>{reportBrand}</b></div><div><span>头部 SKU</span><b>{headSkus.length}<small>个</small></b></div><div><span>覆盖平台</span><b>{reportPlatforms.length}<small>个</small></b></div><div><span>最大价差</span><b>{Math.max(0,...headSkus.map((item) => item.spread))}<small>%</small></b></div></div>
+      <div className="table-scroll"><table><thead><tr><th>排名</th><th>头部 SKU</th><th>销量</th>{reportPlatforms.map((platform) => <th key={platform}>{platform}</th>)}<th>最低价</th><th>价差率</th><th>价格结论</th></tr></thead><tbody>{headSkus.map((item) => <tr key={item.id}><td><span className="rank small">{item.rank}</span></td><td><b>{item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.id}</small></td><td><b>{item.sales30d}</b><small className="cell-sub">近30天</small></td>{reportPlatforms.map((platform) => { const price = item.offers.find((offer) => offer.platform === platform)?.price; return <td key={platform} className={price === item.minPrice ? "platform-low" : ""}>{price ? `¥${price}` : "—"}</td>; })}<td><b className="suggested">{item.cheapest} ¥{item.minPrice}</b></td><td className={item.spread >= 8 ? "cell-danger" : ""}>{item.spread}%</td><td>{item.spread >= 8 ? "平台价差明显，检查优惠口径" : item.spread >= 4 ? "存在跟价空间" : "价格带较稳定"}</td></tr>)}</tbody></table></div>
+      <div className="brand-report-note"><b>报告口径</b><span>头部 SKU 按商家近 30 天销量排序；同品牌不等于同款，报告仍按系列、段位和规格逐 SKU 比较。账户专属优惠不混入本表，需在优惠策略中心单独查看。</span></div></article>
     <div className="table-card report-table"><div className="table-scroll"><table><thead><tr><th>优先级</th><th>商品</th><th>当前价</th><th>市场价</th><th>建议价格</th><th>诊断</th><th>建议动作</th></tr></thead><tbody>{products.slice().sort((a,b) => b.priceIndex-a.priceIndex).slice(0,8).map((item,index) => <tr key={item.id}><td><span className="rank small">{index+1}</span></td><td><b>{item.brand} {item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.role}</small></td><td>¥{item.currentPrice}</td><td>¥{item.marketMedian}</td><td><b className="suggested">¥{item.suggestedLow}-{item.suggestedHigh}</b></td><td><StatusBadge product={item} /></td><td>{item.status.includes("偏高") ? "7天调价实验" : "保持并监控"}</td></tr>)}</tbody></table></div></div>
   </section>;
 }
