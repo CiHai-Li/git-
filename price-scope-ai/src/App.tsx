@@ -318,7 +318,7 @@ function Reports({ products }: { products: AnalyzedProduct[] }) {
       <div className="brand-report-kpis"><div><span>目标品类</span><b>{reportCategory}</b></div><div><span>目标品牌</span><b>{effectiveBrand}</b></div><div><span>头部 SKU</span><b>{headSkus.length}<small>个</small></b></div><div><span>最大价差</span><b>{Math.max(0,...headSkus.map((item) => item.spread))}<small>%</small></b></div></div>
       <div className="visual-grid"><div className="panel mini-visual"><h3>平台价格指数</h3><p>以本报告最低平台均价为 100</p>{platformAverages.map((item) => { const index = Math.round(item.price / Math.max(averageBase, 1) * 100); return <div className="index-bar" key={item.platform}><span>{item.platform}</span><i><em style={{ width: `${Math.min(index - 80, 35) / 35 * 100}%` }} /></i><b>{index}</b></div>; })}</div><div className="panel mini-visual"><h3>SKU 跨平台价差</h3><p>价差率越高，越需要检查活动与优惠口径</p>{headSkus.map((item) => <div className="spread-bar" key={item.id}><span>{item.series} {item.stage}</span><i><em className={item.spread >= 8 ? "risk" : ""} style={{ width: `${Math.min(item.spread, 20) / 20 * 100}%` }} /></i><b>{item.spread}%</b></div>)}</div></div>
       <div className="table-scroll"><table><thead><tr><th>排名</th><th>头部 SKU</th><th>销量</th>{reportPlatforms.map((platform) => <th key={platform}>{platform}</th>)}<th>最低价</th><th>价差率</th><th>价格结论</th></tr></thead><tbody>{headSkus.map((item) => <tr key={item.id}><td><span className="rank small">{item.rank}</span></td><td><b>{item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.id}</small></td><td><b>{item.sales30d}</b><small className="cell-sub">近30天</small></td>{reportPlatforms.map((platform) => { const price = item.offers.find((offer) => offer.platform === platform)?.price; return <td key={platform} className={price === item.minPrice ? "platform-low" : ""}>{price ? `¥${price}` : "—"}</td>; })}<td><b className="suggested">{item.cheapest} ¥{item.minPrice}</b></td><td className={item.spread >= 8 ? "cell-danger" : ""}>{item.spread}%</td><td>{item.spread >= 8 ? "平台价差明显，检查优惠口径" : item.spread >= 4 ? "存在跟价空间" : "价格带较稳定"}</td></tr>)}</tbody></table></div>
-      <div className="brand-report-note"><b>报告口径</b><span>头部 SKU 按近 30 天销量排序；品类、品牌、系列、规格共同约束可比范围。账户专属优惠不混入公开矩阵。</span></div></article>}
+      <div className="report-account-scope"><b>本报告账号口径</b><span>京东：采购主账号（PLUS，北京朝阳）</span><span>天猫：天猫会员账号（88VIP，北京朝阳）</span><span>拼多多：多多采购账号（普通会员，北京朝阳）</span></div><div className="brand-report-note"><b>报告口径</b><span>头部 SKU 按近 30 天销量排序；每个平台列展示该平台所选账号在同一收货地区、同一数量条件下的结算预览价。不同账号报告应分开生成，不直接合并为无条件市场价。</span></div></article>}
     {reportView === "action" && <div className="table-card report-table"><div className="table-caption"><div><h2>运营执行清单</h2><p>只呈现商品诊断、建议价格与下一步动作</p></div><span>{products.length} 个 SKU</span></div><div className="table-scroll"><table><thead><tr><th>优先级</th><th>品类</th><th>商品</th><th>当前价</th><th>市场价</th><th>建议价格</th><th>诊断</th><th>建议动作</th></tr></thead><tbody>{products.slice().sort((a,b) => b.priceIndex-a.priceIndex).map((item,index) => <tr key={item.id}><td><span className="rank small">{index+1}</span></td><td>{item.category || "母婴奶粉"}</td><td><b>{item.brand} {item.series} {item.stage}</b><small className="cell-sub">{item.spec} · {item.role}</small></td><td>¥{item.currentPrice}</td><td>¥{item.marketMedian}</td><td><b className="suggested">¥{item.suggestedLow}-{item.suggestedHigh}</b></td><td><StatusBadge product={item} /></td><td>{item.status.includes("偏高") ? "7天调价实验" : "保持并监控"}</td></tr>)}</tbody></table></div></div>}
   </section>;
 }
@@ -326,13 +326,22 @@ function Reports({ products }: { products: AnalyzedProduct[] }) {
 type CollectionResult = {
   id: string; platform: string; sku: string; title: string; price?: number;
   method?: string; status: "success" | "failed"; collectedAt: string; error?: string;
+  accountAlias?: string; memberLevel?: string; region?: string; priceBasis?: "checkout_preview";
 };
 
+type AccountProfile = { id: string; platform: string; alias: string; memberLevel: string; region: string; couponScope: string; status: "ready" | "expired" };
+
+const accountProfiles: AccountProfile[] = [
+  { id: "jd-main", platform: "京东", alias: "采购主账号", memberLevel: "PLUS 正式会员", region: "北京市朝阳区", couponScope: "平台券 / 店铺券 / PLUS 券", status: "ready" },
+  { id: "jd-alt", platform: "京东", alias: "普通会员对照号", memberLevel: "普通会员", region: "上海市浦东新区", couponScope: "平台券 / 店铺券", status: "ready" },
+  { id: "tm-main", platform: "天猫", alias: "天猫会员账号", memberLevel: "88VIP", region: "北京市朝阳区", couponScope: "跨店满减 / 店铺券 / 会员折扣", status: "ready" },
+  { id: "pdd-main", platform: "拼多多", alias: "多多采购账号", memberLevel: "普通会员", region: "北京市朝阳区", couponScope: "平台券 / 店铺券 / 补贴", status: "ready" },
+];
+
 const demoCollection: CollectionResult[] = [
-  { id: "COL-001", platform: "京东", sku: "P001", title: "金领冠 珍护 2段 750g", price: 289, method: "开放接口快照", status: "success", collectedAt: "2026-08-11T13:42:00.000Z" },
-  { id: "COL-002", platform: "天猫", sku: "P001", title: "金领冠 珍护 2段 750g", price: 285, method: "开放接口快照", status: "success", collectedAt: "2026-08-11T13:41:00.000Z" },
-  { id: "COL-003", platform: "拼多多", sku: "P001", title: "金领冠 珍护 2段 750g", price: 279, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:40:00.000Z" },
-  { id: "COL-004", platform: "苏宁易购", sku: "P003", title: "飞鹤 星飞帆 3段 700g", price: 249, method: "公开页面快照", status: "success", collectedAt: "2026-08-11T13:39:00.000Z" },
+  { id: "COL-001", platform: "京东", sku: "P001", title: "金领冠 珍护 2段 750g", price: 259, method: "购物车优惠核算 + 结算页复核", accountAlias: "采购主账号", memberLevel: "PLUS 正式会员", region: "北京市朝阳区", priceBasis: "checkout_preview", status: "success", collectedAt: "2026-08-11T13:42:00.000Z" },
+  { id: "COL-002", platform: "天猫", sku: "P001", title: "金领冠 珍护 2段 750g", price: 256.75, method: "购物车优惠核算 + 结算页复核", accountAlias: "天猫会员账号", memberLevel: "88VIP", region: "北京市朝阳区", priceBasis: "checkout_preview", status: "success", collectedAt: "2026-08-11T13:41:00.000Z" },
+  { id: "COL-003", platform: "拼多多", sku: "P001", title: "金领冠 珍护 2段 750g", price: 271, method: "订单确认页预览", accountAlias: "多多采购账号", memberLevel: "普通会员", region: "北京市朝阳区", priceBasis: "checkout_preview", status: "success", collectedAt: "2026-08-11T13:40:00.000Z" },
 ];
 
 type ClaimMode = "inspect" | "confirm" | "rules";
@@ -355,17 +364,17 @@ function PromotionCenter() {
   };
   return <section className="page-section promotion-page">
     <div className="page-title"><div><span className="eyebrow">真实到手价引擎</span><h1>优惠策略中心</h1><p>统一识别平台、店铺、品类、会员和运费优惠，并保留每一项价格条件。</p></div><span className="workflow-pill">工作流 MVP · 演示数据</span></div>
-    <div className="promo-kpis"><div><span>公开售价</span><b>¥{best.salePrice}</b><small>可直接比价</small></div><div><span>可实现到手价</span><b className="promo-best">¥{best.finalPrice}</b><small>含可领取优惠</small></div><div><span>优惠影响</span><b>-¥{best.discount}</b><small>{best.applied.length} 项叠加</small></div><div><span>核算可信度</span><b>{best.confidence}%</b><small>价格条件已留痕</small></div></div>
+    <div className="promo-kpis"><div><span>结算页商品金额</span><b>¥{best.salePrice}</b><small>当前账号可见</small></div><div><span>结算预览价</span><b className="promo-best">¥{best.finalPrice}</b><small>含已验证优惠</small></div><div><span>优惠影响</span><b>-¥{best.discount}</b><small>{best.applied.length} 项叠加</small></div><div><span>核算可信度</span><b>{best.confidence}%</b><small>账号与条件已留痕</small></div></div>
     <div className="promotion-grid"><article className="panel"><div className="panel-head"><div><h2>一次授权，持续复用登录状态</h2><p>账号登录在平台官方页面完成，价策 AI 不收集密码</p></div></div>
-      <div className="auth-list">{["京东", "天猫", "拼多多"].map((platform) => <div key={platform}><span>{platform.slice(0, 1)}</span><div><b>{platform}</b><small>{authorized[platform] ? "本机授权状态可用" : "采集公开价；领取优惠前需授权"}</small></div><em className={authorized[platform] ? "ready" : "waiting"}>{authorized[platform] ? "● 已授权" : "未授权"}</em><button onClick={() => setAuthorized((state) => ({ ...state, [platform]: !state[platform] }))}>{authorized[platform] ? "停用" : "首次授权"}</button></div>)}</div>
+      <div className="auth-list">{["京东", "天猫", "拼多多"].map((platform) => <div key={platform}><span>{platform.slice(0, 1)}</span><div><b>{platform}</b><small>{authorized[platform] ? "本机授权状态可用，可切换账号" : "未授权时不执行价格采集"}</small></div><em className={authorized[platform] ? "ready" : "waiting"}>{authorized[platform] ? "● 已授权" : "未授权"}</em><button onClick={() => setAuthorized((state) => ({ ...state, [platform]: !state[platform] }))}>{authorized[platform] ? "停用" : "首次授权"}</button></div>)}</div>
       <div className="auth-note">授权状态只登记在用户本机；遇到验证码、实名、付费会员或支付步骤立即暂停并交还用户。</div>
     </article><article className="panel"><div className="panel-head"><div><h2>优惠领取策略</h2><p>默认只在产生真实价格收益时触发</p></div></div>
       <div className="claim-modes">{([['inspect','仅识别','不触发领取'],['confirm','逐次确认','推荐，操作透明'],['rules','规则授权','按金额与品类自动领取']] as const).map(([id, label, note]) => <button key={id} className={claimMode === id ? "active" : ""} onClick={() => setClaimMode(id)}><b>{label}</b><small>{note}</small></button>)}</div>
       <div className="claim-rule"><b>当前规则</b><span>{claimMode === "inspect" ? "识别全部优惠并计算，但不领取。" : claimMode === "confirm" ? "领取前展示优惠、有效期和限制，由用户确认。" : "仅自动领取免费、无需实名且能降低目标商品价格的优惠。"}</span></div>
     </article></div>
     <article className="panel link-inspector"><div><h2>商家优惠策略与链接识别</h2><p>商家可提交优惠链接；系统先校验 HTTPS、平台域名和活动标识，再进入领取策略。</p></div><label><input value={link} onChange={(event) => setLink(event.target.value)} placeholder="粘贴京东、淘宝/天猫、拼多多等官方优惠链接" /><button className="primary-button" onClick={inspectLink}>识别优惠</button></label>{linkResult && <div className={`link-result ${linkResult.valid ? "valid" : "invalid"}`}>{linkResult.valid ? `✓ 已识别为${linkResult.platform}官方域名；下一步读取门槛、有效期与可叠加关系。` : `× ${linkResult.reason}`}</div>}</article>
-    <article className="table-card real-price-table"><div className="table-caption"><div><h2>真实到手价拆解</h2><p>市场诊断只使用可公开复现的价格；会员/账户专属价单独展示</p></div><span>{offers.length} 个平台</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>划线价</th><th>公开售价</th><th>最优可实现价</th><th>优惠组成</th><th>价格口径</th><th>可信度</th></tr></thead><tbody>{offers.map((offer) => <tr key={offer.platform}><td><b>{offer.platform}</b></td><td className="list-price">¥{offer.listPrice}</td><td>¥{offer.salePrice}</td><td><b className="suggested">¥{offer.finalPrice}</b></td><td>{offer.applied.map((item: { name: string }) => item.name).join(" + ") || "无"}</td><td><span className={`basis-pill ${offer.comparable ? "public" : "personal"}`}>{offer.comparable ? (offer.priceBasis === "held" ? "已持券价" : "条件可实现价") : "账户专属价"}</span></td><td>{offer.confidence}%</td></tr>)}</tbody></table></div></article>
-    <div className="price-truth-note"><b>价格不失真原则</b><span>公开价、条件可领取价、已持券价分别存储；未验证的优惠不写成“到手价”，个性化价格不混入市场中位数，所有结果带采集时间、适用条件和置信度。</span></div>
+    <article className="table-card real-price-table"><div className="table-caption"><div><h2>账号结算预览价拆解</h2><p>全部结果来自指定账号条件，报告同时展示会员、地区与优惠约束</p></div><span>{offers.length} 个平台</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>结算页商品金额</th><th>优惠后预览价</th><th>优惠组成</th><th>账号口径</th><th>可信度</th></tr></thead><tbody>{offers.map((offer) => <tr key={offer.platform}><td><b>{offer.platform}</b></td><td>¥{offer.salePrice}</td><td><b className="suggested">¥{offer.finalPrice}</b></td><td>{offer.applied.map((item: { name: string }) => item.name).join(" + ") || "无可用优惠"}</td><td><span className="basis-pill personal">账号结算预览价</span></td><td>{offer.confidence}%</td></tr>)}</tbody></table></div></article>
+    <div className="price-truth-note"><b>价格不失真原则</b><span>未登录不采集；优惠必须在购物车或结算页复核后才计入。所有结果绑定账号别名、会员等级、地区、数量、优惠条件与时间；产品在提交订单前停止，因此称为“结算预览价”，实际支付订单回传后才可称为“成交价”。</span></div>
   </section>;
 }
 
@@ -382,13 +391,17 @@ function CollectorCenter({ products }: { products: Product[] }) {
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["京东", "天猫", "拼多多"]);
-  const [priceScope, setPriceScope] = useState("claimable");
+  const [activeAccounts, setActiveAccounts] = useState<Record<string, string>>({ 京东: "jd-main", 天猫: "tm-main", 拼多多: "pdd-main" });
   const categories = [...new Set(products.map((item) => item.category || "母婴奶粉"))].sort();
   const brands = [...new Set(products.filter((item) => !category || (item.category || "母婴奶粉") === category).map((item) => item.brand))].sort();
   const seriesOptions = [...new Set(products.filter((item) => (!category || (item.category || "母婴奶粉") === category) && (!brand || item.brand === brand)).map((item) => item.series))].sort();
   const specOptions = [...new Set(products.filter((item) => (!category || (item.category || "母婴奶粉") === category) && (!brand || item.brand === brand) && (!series || item.series === series)).map((item) => item.spec))].sort();
   const catalog = filterCatalog(products, { category, brand, series, spec, query }) as Product[];
-  const collectionPlan = buildCollectionPlan(products, selectedIds, selectedPlatforms, priceScope);
+  const selectedAccountProfiles = Object.fromEntries(Object.entries(activeAccounts).map(([platform, id]) => {
+    const account = accountProfiles.find((item) => item.id === id);
+    return [platform, account ? { id: account.id, alias: account.alias } : null];
+  }));
+  const collectionPlan = buildCollectionPlan(products, selectedIds, selectedPlatforms, selectedAccountProfiles);
   const toggle = (value: string, values: string[], setter: (next: string[]) => void) => setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   const runCollection = async () => {
     if (mode === "demo") {
@@ -403,13 +416,17 @@ function CollectorCenter({ products }: { products: Product[] }) {
     if (mode === "catalog") {
       if (!selectedIds.length) { setMessage("请至少勾选一个需要监控的商品 SKU。"); return; }
       if (!selectedPlatforms.length) { setMessage("请至少选择一个目标平台。"); return; }
+      const missingAccount = selectedPlatforms.find((platform) => !activeAccounts[platform]);
+      if (missingAccount) { setMessage(`${missingAccount}尚未选择有效登录账号，请先授权或切换账号。`); return; }
       setRunning(true);
       window.setTimeout(() => {
-        const generated = collectionPlan.map((task: { id: string; sku: string; title: string; platform: string; priceScope: string }, index: number) => {
+        const generated = collectionPlan.map((task: { id: string; sku: string; title: string; platform: string; accountAlias: string }, index: number) => {
           const product = products.find((item) => item.id === task.sku)!;
           const offer = product.offers.find((item) => item.platform === task.platform);
+          const account = accountProfiles.find((item) => item.id === activeAccounts[task.platform]);
           return { id: `PLAN-${index + 1}`, platform: task.platform, sku: task.sku, title: task.title,
-            price: offer?.price, method: offer ? `货盘匹配 · ${task.priceScope === "public" ? "公开价" : task.priceScope === "claimable" ? "含可领优惠" : "已持券价"}` : "待平台同款搜索",
+            price: offer?.price, method: offer ? "登录态购物车核算 + 结算页复核" : "待平台同款搜索",
+            accountAlias: task.accountAlias, memberLevel: account?.memberLevel, region: account?.region, priceBasis: "checkout_preview" as const,
             status: offer ? "success" as const : "failed" as const, collectedAt: new Date().toISOString(), error: offer ? undefined : "未找到高置信度同款，已进入人工复核队列" };
         });
         setResults(generated);
@@ -422,7 +439,7 @@ function CollectorCenter({ products }: { products: Product[] }) {
     if (!targets.length) { setMessage("请先粘贴至少一个商品页 HTTPS 链接，每行一个。"); return; }
     setRunning(true); setMessage("正在连接本地采集服务并按顺序限速采集……");
     try {
-      const response = await fetch("http://127.0.0.1:8787/api/collect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targets }) });
+      const response = await fetch("http://127.0.0.1:8787/api/collect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ targets, accounts: activeAccounts, priceBasis: "checkout_preview" }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "采集服务返回异常");
       setResults(payload.results);
@@ -434,23 +451,24 @@ function CollectorCenter({ products }: { products: Product[] }) {
   const successful = results.filter((item) => item.status === "success");
   const platforms = new Set(successful.map((item) => item.platform)).size;
   return <section className="page-section collector-page">
-    <div className="page-title"><div><span className="eyebrow">市场情报入口</span><h1>价格采集中心</h1><p>按品牌与 SKU 选择监控商品，或直接提交商品链接，形成可追溯的竞品报价快照。</p></div><button className="primary-button" onClick={runCollection} disabled={running}>{running ? "采集中…" : mode === "demo" ? "刷新演示快照" : mode === "catalog" ? "生成采集任务" : "立即采集"}</button></div>
+    <div className="page-title"><div><span className="eyebrow">账号真实价格入口</span><h1>价格采集中心</h1><p>必须基于用户授权账号采集，自动核算优惠并在提交订单前复核结算预览价。</p></div><button className="primary-button" onClick={runCollection} disabled={running}>{running ? "采集中…" : mode === "demo" ? "刷新演示快照" : mode === "catalog" ? "生成采集任务" : "立即采集"}</button></div>
     <div className="collector-kpis"><div><span>成功报价</span><b>{successful.length}</b><small>条</small></div><div><span>覆盖平台</span><b>{platforms}</b><small>个</small></div><div><span>成功率</span><b>{results.length ? Math.round(successful.length / results.length * 100) : 0}</b><small>%</small></div><div><span>采集策略</span><b className="strategy-value">限速</b><small>≥ 1.2 秒/页</small></div></div>
-    <div className="collector-layout"><article className="panel collector-control"><div className="panel-head"><div><h2>采集任务</h2><p>演示、货盘选品与链接采集明确隔离</p></div><span className={`mode-pill ${mode}`}>{mode === "demo" ? "DEMO" : mode === "catalog" ? "SKU" : "LOCAL"}</span></div>
+    <article className="panel account-workbench"><div className="panel-head"><div><h2>采集账号与价格条件</h2><p>每个平台独立选择账号；更换账号后新任务使用新画像，历史报告不被覆盖</p></div><span className="workflow-pill">登录态必选</span></div><div className="account-grid">{["京东", "天猫", "拼多多"].map((platform) => { const options = accountProfiles.filter((item) => item.platform === platform); const selectedAccount = options.find((item) => item.id === activeAccounts[platform]); return <div className="account-card" key={platform}><div><span>{platform.slice(0,1)}</span><b>{platform}</b></div><label>当前采集账号<select value={activeAccounts[platform] || ""} onChange={(event) => setActiveAccounts((state) => ({ ...state, [platform]: event.target.value }))}><option value="">未授权</option>{options.map((item) => <option key={item.id} value={item.id}>{item.alias}</option>)}</select></label>{selectedAccount ? <ul><li>{selectedAccount.memberLevel}</li><li>{selectedAccount.region}</li><li>{selectedAccount.couponScope}</li></ul> : <p>请先在平台官方页面完成登录授权</p>}<button onClick={() => setMessage(`${platform}新增账号时会打开官方登录页；完成后保存为独立本机会话。当前为产品交互演示。`)}>＋ 新增登录账号</button></div>; })}</div><div className="auth-note">报告会显示账号别名、会员等级、收货地区、优惠范围和采集时间；不保存密码，不执行最终下单或支付。</div></article>
+    <div className="collector-layout"><article className="panel collector-control"><div className="panel-head"><div><h2>采集任务</h2><p>演示、货盘选品与登录态链接采集明确隔离</p></div><span className={`mode-pill ${mode}`}>{mode === "demo" ? "DEMO" : mode === "catalog" ? "SKU" : "LOCAL"}</span></div>
       <div className="mode-switch three"><button className={mode === "demo" ? "active" : ""} onClick={() => { setMode("demo"); setMessage("当前显示稳定的面试演示快照，不代表实时平台价格。"); }}>演示快照</button><button className={mode === "catalog" ? "active" : ""} onClick={() => { setMode("catalog"); setMessage("先按品牌筛选并勾选 SKU，再选择目标平台和价格口径。"); }}>按品牌选品</button><button className={mode === "live" ? "active" : ""} onClick={() => { setMode("live"); setMessage("本地服务仅接受京东、天猫、淘宝、拼多多、苏宁和唯品会 HTTPS 链接。"); }}>按链接采集</button></div>
       {mode === "demo" && <div className="demo-board"><span>面试展示模式</span><h3>无需平台密钥，也能演示完整数据链路</h3><p>刷新后会生成新的采集时间，再进入价格诊断、调价模拟与报告输出。</p></div>}
       {mode === "catalog" && <div className="catalog-picker"><div className="catalog-filters"><label>品类<select value={category} onChange={(event) => { setCategory(event.target.value); setBrand(""); setSeries(""); setSpec(""); }}><option value="">全部品类</option>{categories.map((item) => <option key={item}>{item}</option>)}</select></label><label>品牌<select value={brand} onChange={(event) => { setBrand(event.target.value); setSeries(""); setSpec(""); }}><option value="">全部品牌</option>{brands.map((item) => <option key={item}>{item}</option>)}</select></label><label>系列<select value={series} onChange={(event) => { setSeries(event.target.value); setSpec(""); }}><option value="">全部系列</option>{seriesOptions.map((item) => <option key={item}>{item}</option>)}</select></label><label>规格<select value={spec} onChange={(event) => setSpec(event.target.value)}><option value="">全部规格</option>{specOptions.map((item) => <option key={item}>{item}</option>)}</select></label></div>
         <label className="catalog-search"><span>搜索商品</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="商品名称或 SKU" /></label>
         <div className="catalog-toolbar"><span>找到 {catalog.length} 个商品，已选 {selectedIds.length} 个</span><button onClick={() => setSelectedIds(catalog.map((item) => item.id))}>选择当前全部</button><button onClick={() => setSelectedIds([])}>清空</button></div>
         <div className="sku-list">{catalog.map((product) => <label key={product.id} className={selectedIds.includes(product.id) ? "selected" : ""}><input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggle(product.id, selectedIds, setSelectedIds)} /><span>{product.brand.slice(0, 1)}</span><div><b>{product.brand} {product.series} {product.stage}</b><small>{product.spec} · {product.id} · {product.role}</small></div><em>{product.stock} 件库存</em></label>)}</div>
-        <div className="task-options"><div><b>目标平台</b>{["京东", "天猫", "拼多多", "即时零售"].map((platform) => <button key={platform} className={selectedPlatforms.includes(platform) ? "active" : ""} onClick={() => toggle(platform, selectedPlatforms, setSelectedPlatforms)}>{platform}</button>)}</div><label><b>价格口径</b><select value={priceScope} onChange={(event) => setPriceScope(event.target.value)}><option value="public">公开售价</option><option value="claimable">条件可实现价</option><option value="held">当前账户已持券价</option></select></label></div>
+        <div className="task-options"><div><b>目标平台</b>{["京东", "天猫", "拼多多"].map((platform) => <button key={platform} className={selectedPlatforms.includes(platform) ? "active" : ""} onClick={() => toggle(platform, selectedPlatforms, setSelectedPlatforms)}>{platform}</button>)}</div><label><b>唯一价格口径</b><select value="checkout_preview" disabled><option value="checkout_preview">账号结算预览价</option></select></label></div>
         <div className="plan-summary"><b>{collectionPlan.length}</b><span>个待生成任务</span><small>{selectedIds.length} 个 SKU × {selectedPlatforms.length} 个平台</small></div></div>}
-      {mode === "live" && <label className="url-input"><span>公开商品页链接</span><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={"https://item.jd.com/商品编号.html\nhttps://detail.tmall.com/item.htm?id=商品编号"} /><small>每行一个。请仅采集你有权访问的公开页面，不绕过登录、验证码或访问限制。</small></label>}
+      {mode === "live" && <label className="url-input"><span>授权账号可访问的商品页链接</span><textarea value={urls} onChange={(event) => setUrls(event.target.value)} placeholder={"https://item.jd.com/商品编号.html\nhttps://detail.tmall.com/item.htm?id=商品编号"} /><small>系统复用所选账号会话，计算优惠后进入结算页复核，并在提交订单前停止。</small></label>}
       <div className="collector-message">{message}</div>
-    </article><article className="panel platform-panel"><div className="panel-head"><div><h2>平台接入矩阵</h2><p>生产环境优先使用开放平台 API</p></div></div>{[
-        ["京东", "开放 API / 公开页", "已适配"], ["天猫 / 淘宝", "开放 API / 公开页", "已适配"], ["拼多多", "开放 API / 公开页", "已适配"], ["苏宁易购", "公开页", "已适配"], ["唯品会", "公开页", "已适配"],
+    </article><article className="panel platform-panel"><div className="panel-head"><div><h2>平台登录态矩阵</h2><p>按平台配置独立浏览器适配器</p></div></div>{[
+        ["京东", "多账号会话 / 结算复核", "交互演示"], ["天猫 / 淘宝", "多账号会话 / 结算复核", "交互演示"], ["拼多多", "多账号会话 / 结算复核", "交互演示"], ["其他平台", "待配置浏览器适配器", "规划中"],
       ].map((item) => <div className="platform-row" key={item[0]}><span>{item[0].slice(0, 1)}</span><div><b>{item[0]}</b><small>{item[1]}</small></div><em>● {item[2]}</em></div>)}</article></div>
-    <article className="table-card collection-table"><div className="table-caption"><div><h2>最近采集结果</h2><p>价格、解析方式和采集时间均保留来源线索</p></div><span>{results.length} 条记录</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>匹配商品</th><th>到手价</th><th>解析方式</th><th>采集时间</th><th>状态</th></tr></thead><tbody>{results.map((item) => <tr key={item.id}><td><b>{item.platform}</b></td><td><b>{item.title}</b><small className="cell-sub">SKU：{item.sku}</small></td><td>{item.price ? <b className="suggested">¥{item.price}</b> : "—"}</td><td>{item.method || "—"}</td><td>{new Date(item.collectedAt).toLocaleString("zh-CN", { hour12: false })}</td><td><span className={`collection-status ${item.status}`}>{item.status === "success" ? "采集成功" : "采集失败"}</span>{item.error && <small className="cell-sub error-copy">{item.error}</small>}</td></tr>)}</tbody></table></div></article>
+    <article className="table-card collection-table"><div className="table-caption"><div><h2>最近采集结果</h2><p>结算预览价与账号条件绑定保存，切换账号不会覆盖历史记录</p></div><span>{results.length} 条记录</span></div><div className="table-scroll"><table><thead><tr><th>平台</th><th>匹配商品</th><th>结算预览价</th><th>账号条件</th><th>验证方式</th><th>采集时间</th><th>状态</th></tr></thead><tbody>{results.map((item) => <tr key={item.id}><td><b>{item.platform}</b></td><td><b>{item.title}</b><small className="cell-sub">SKU：{item.sku}</small></td><td>{item.price ? <b className="suggested">¥{item.price}</b> : "—"}</td><td><b>{item.accountAlias || "未记录"}</b><small className="cell-sub">{item.memberLevel || "—"} · {item.region || "—"}</small></td><td>{item.method || "—"}</td><td>{new Date(item.collectedAt).toLocaleString("zh-CN", { hour12: false })}</td><td><span className={`collection-status ${item.status}`}>{item.status === "success" ? "采集成功" : "采集失败"}</span>{item.error && <small className="cell-sub error-copy">{item.error}</small>}</td></tr>)}</tbody></table></div></article>
     <div className="compliance-note"><b>合规边界</b><span>系统不会绕过登录、验证码、robots.txt 或平台访问控制。正式商业部署应申请对应平台开放 API 权限，并保留请求频率、授权范围和数据用途审计。</span></div>
   </section>;
 }

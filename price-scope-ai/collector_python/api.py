@@ -42,8 +42,15 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/promotions/optimize":
                 return self._reply(200, optimize_price(payload.get("sale_price", 0), payload.get("promotions", []), payload.get("shipping_fee", 0), payload.get("quantity", 1), payload.get("include_claimable", True)))
             if self.path == "/api/sessions/register":
-                record = SessionStore().register(str(payload.get("platform", "")), str(payload.get("state_file", "")), payload.get("expires_at"))
+                record = SessionStore().register(
+                    str(payload.get("platform", "")), str(payload.get("state_file", "")),
+                    payload.get("expires_at"), str(payload.get("account_id", "default")),
+                    payload.get("profile") if isinstance(payload.get("profile"), dict) else {},
+                    bool(payload.get("make_active", True)),
+                )
                 return self._reply(201, record)
+            if self.path == "/api/sessions/activate":
+                return self._reply(200, SessionStore().activate(str(payload.get("platform", "")), str(payload.get("account_id", ""))))
             return self._reply(404, {"error": "not found"})
         except (ValueError, TypeError, json.JSONDecodeError) as error:
             return self._reply(400, {"error": str(error)})

@@ -9,7 +9,7 @@ export function filterCatalog(products, filters = {}) {
   );
 }
 
-export function buildCollectionPlan(products, selectedIds, platforms, priceScope = "public") {
+export function buildCollectionPlan(products, selectedIds, platforms, accounts = {}) {
   const ids = new Set(selectedIds || []);
   return (products || []).filter((product) => ids.has(product.id)).flatMap((product) =>
     (platforms || []).map((platform) => ({
@@ -18,7 +18,9 @@ export function buildCollectionPlan(products, selectedIds, platforms, priceScope
       brand: product.brand,
       title: product.name,
       platform,
-      priceScope,
+      accountId: accounts[platform]?.id || null,
+      accountAlias: accounts[platform]?.alias || null,
+      priceScope: "checkout_preview",
       matchKey: [product.brand, product.series, product.stage, product.spec].filter(Boolean).join("/"),
     }))
   );
