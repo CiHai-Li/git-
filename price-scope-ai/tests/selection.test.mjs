@@ -17,10 +17,18 @@ test("品类筛选与品牌筛选联动", () => {
 });
 
 test("选中的 SKU 按平台生成采集计划", () => {
-  const plan = buildCollectionPlan(products, ["A1", "B1"], ["京东", "天猫"], "claimable");
+  const plan = buildCollectionPlan(products, ["A1", "B1"], ["京东", "天猫"], {
+    京东: { id: "jd-main", alias: "采购主账号" }, 天猫: { id: "tm-main", alias: "天猫会员账号" },
+  });
   assert.equal(plan.length, 4);
   assert.equal(plan[0].matchKey, "甲/一系/2段/800g");
-  assert.ok(plan.every((item) => item.priceScope === "claimable"));
+  assert.ok(plan.every((item) => item.priceScope === "checkout_preview"));
+  assert.equal(plan[0].accountId, "jd-main");
+});
+
+test("未选择平台账号时保留空账号，供采集前置校验拦截", () => {
+  const [task] = buildCollectionPlan(products, ["A1"], ["京东"], {});
+  assert.equal(task.accountId, null);
 });
 
 test("同品牌头部 SKU 按销量排名并计算跨平台价差", () => {
