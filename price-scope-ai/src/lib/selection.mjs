@@ -1,5 +1,7 @@
 export function filterCatalog(products, filters = {}) {
   return (products || []).filter((product) =>
+    (!filters.category || (product.category || "母婴奶粉") === filters.category)
+    &&
     (!filters.brand || product.brand === filters.brand)
     && (!filters.series || product.series === filters.series)
     && (!filters.spec || product.spec === filters.spec)
@@ -22,9 +24,9 @@ export function buildCollectionPlan(products, selectedIds, platforms, priceScope
   );
 }
 
-export function buildBrandHeadSkuReport(products, brand, limit = 5) {
+export function buildBrandHeadSkuReport(products, brand, limit = 5, category = "") {
   return (products || [])
-    .filter((product) => product.brand === brand)
+    .filter((product) => product.brand === brand && (!category || (product.category || "母婴奶粉") === category))
     .sort((a, b) => Number(b.sales30d || 0) - Number(a.sales30d || 0))
     .slice(0, Math.max(1, Number(limit) || 5))
     .map((product, index) => {
